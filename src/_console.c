@@ -1,6 +1,8 @@
 #include <windows.h>
 
-static BOOL getKeydownVK(DWORD* out) {
+typedef enum {NONE, KEY_DOWN, KEY_UP} KSTATE;
+
+KSTATE getKeyVK(WORD* out, BOOL isTypomatic) {
     DWORD iEvNum, dummy;
     INPUT_RECORD ir;
     static HANDLE hIn = NULL;
@@ -10,19 +12,19 @@ static BOOL getKeydownVK(DWORD* out) {
     GetNumberOfConsoleInputEvents(hIn, &iEvNum);
     while (iEvNum--) {
         ReadConsoleInput(hIn, &ir, 1, &dummy);
-        if (ir.EventType == KEY_EVENT && ir.Event.KeyEvent.bKeyDown) {
+        if (ir.EventType == KEY_EVENT && (isTypomatic || ir.Event.KeyEvent.wRepeatCount == 0)) {
             if (out) *out = ir.Event.KeyEvent.wVirtualKeyCode;
-            return TRUE;
+            return ir.Event.KeyEvent.bKeyDown ? KEY_DOWN : KEY_UP;
         }
     }
-    return FALSE;
+    return NONE;
 }
 
-static void pressAnyKey() {
-    while (!getKeydownVK(NULL)) SleepEx(1,1);
+void pressAnyKey() {
+    while (!getKeyVK(NULL, TRUE)) SleepEx(1,1);
 }
 
-static void clearScreen() {
+void clearScreen() {
    COORD coordScreen = {0, 0};
    DWORD cCharsWritten;
    CONSOLE_SCREEN_BUFFER_INFO csbi; 
