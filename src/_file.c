@@ -18,7 +18,7 @@ int getFileSize(FILE* f) {
     return size;
 }
 
-BOOL loadFileToMem(char* path, MemFile* mf) {
+BOOL loadFileToMem(MemFile* mf, char* path) {
     FILE* fin;
     
     if (!(fin = fopen(path, "rb"))) return FALSE;
@@ -56,7 +56,7 @@ typedef struct Log {
     int allocSize;
 } Log;
 
-BOOL allocLog(int size, Log* log) {
+BOOL allocLog(Log* log, int size) {
     void* ptr;
     
     if (!log->data || log->allocSize == 0) {
@@ -72,16 +72,17 @@ BOOL allocLog(int size, Log* log) {
     return TRUE;
 }
 
-BOOL loadLog(char* path, Log* log) {
+BOOL loadLog(Log* log, char* path) {
     #define LINEMAX 1024
     FILE* fin;
     int fileSize; int index;
     char lineBuf[LINEMAX]; char split[]="\t ";
+    LogRow* prevLr = NULL;
     
     
     if (!(fin = fopen(path, "r"))) return FALSE;
     fileSize = getFileSize(fin);
-    allocLog(fileSize/44, log); //44 is size of smallest log entry
+    allocLog(log, fileSize/44); //44 is size of smallest log entry
     
     index = 0;
     while(fgets(lineBuf, LINEMAX, fin)) {
@@ -99,7 +100,7 @@ BOOL loadLog(char* path, Log* log) {
         //DAT: timestamp
         if (!(pch = strtok(NULL, split))) continue;
         lr.duration = strtof(pch, NULL);
-        if (index > 0) lr.duration -= log->data[index-1].duration;
+        if (index > 0) prevLr->duration = lr.duration - prevLr->duration;
         
         //STR: "__FAKE_WRITE_PORT_UCHAR:"
         if (!(pch = strtok(NULL, split))) continue;
@@ -122,14 +123,26 @@ BOOL loadLog(char* path, Log* log) {
         if (!(pch = strtok(NULL, split))) continue;
         lr.data = strtol(pch, NULL, 0);
         
-        if (index >= log->allocSize) allocLog(log->allocSize + 512, log);
+        if (index >= log->allocSize) allocLog(log, log->allocSize + 512);
+        prevLr = &log->data[index];
         log->data[index].duration = lr.duration;
         log->data[index].port     = lr.port;
         log->data[index].data     = lr.data;
         log->dataSize = ++index;
     }
+    log->data[log->dataSize-1].duration = 0.0;
     fclose(fin);
     
     return TRUE;
     #undef LINEMAX
+}
+
+//-------------------------------------
+
+typedef struct Config {
+    USHORT basePort;
+} Config;
+
+BOOL loadConfig(char* path, Config* conf) {
+    return TRUE;
 }

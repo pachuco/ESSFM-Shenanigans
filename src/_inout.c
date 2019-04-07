@@ -46,15 +46,18 @@ BOOL initInOut() {
 }
 
 void QPCuWait(DWORD uSecTime) {
-    //this function might fail in win2000 with old hardware
     static LONGLONG freq=0;
     LONGLONG start=0, cur=0, llTime=0;
     
     if (freq == 0) QueryPerformanceFrequency((PLARGE_INTEGER)&freq);
-    llTime = ((LONGLONG)uSecTime * freq)/1000000;
-    QueryPerformanceCounter((PLARGE_INTEGER)&start);
-    while (cur < (start + llTime)) {
-        SwitchToThread();
-        QueryPerformanceCounter((PLARGE_INTEGER)&cur);
+    if (freq != 0) {
+        llTime = ((LONGLONG)uSecTime * freq)/1000000;
+        QueryPerformanceCounter((PLARGE_INTEGER)&start);
+        while (cur < (start + llTime)) {
+            SwitchToThread();
+            QueryPerformanceCounter((PLARGE_INTEGER)&cur);
+        }
+    } else {
+        //TODO: alternate timing mechanism
     }
 }
