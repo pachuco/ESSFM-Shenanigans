@@ -127,9 +127,9 @@ int main(int argc, char *argv[]) {
                 }
             }
             //if
-            resizeScreenBuf(NULL);
             SleepEx(1, 1);
         }
+        resizeScreenBuf(NULL);
     }
     
     //printf("%d\n", 0b11000);
