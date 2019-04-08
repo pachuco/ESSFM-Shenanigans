@@ -4,49 +4,6 @@
 #include "_inout.c"
 #include "_console.c"
 
-//Base address of soundcard's FM ports
-//I believe this will be BAR 1
-//Ports are 0x00 - 0x0F
-//Define this very carefully!
-#define FMBASE 0xDE00
-
-//Some entries to describe our data file
-#define DAT_BANKOFF 0x8C40
-#define DAT_INSLEN 0x1C
-
-void IO_write8(UCHAR port, UCHAR data) {
-    DlPortWritePortUchar(FMBASE + port, data);
-}
-
-void IO_write8w(UCHAR port, UCHAR data) {
-    DlPortWritePortUchar(FMBASE + port, data);
-    QPCuWait(50);
-}
-
-void FM_startSynth() {
-    //these are probably not right
-    IO_write8w(0x04, 72);
-    IO_write8w(0x04, 72);
-    IO_write8w(0x05, 0);
-    IO_write8w(0x04, 127);
-    IO_write8w(0x04, 127);
-    IO_write8w(0x05, 0);
-    IO_write8w(0x04, 54);
-    IO_write8w(0x05, 153);//119
-    IO_write8w(0x04, 107);
-    IO_write8w(0x05, 0);
-    IO_write8w(0x07, 66);
-    IO_write8w(0x02, 5);
-    IO_write8w(0x01, 128);
-}
-
-void FM_stopSynth() {
-    IO_write8w(0x04, 72);
-    IO_write8w(0x04, 72);
-    IO_write8w(0x05, 16);
-    IO_write8w(0x07, 98);
-}
-
 void TUI_displayLog(ScreenBuffer* sBuf, Log* log, int index) {
     SHORT vertMiddle = sBuf->wndSize.Y / 2;
     WORD bckgAttr  = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
@@ -66,6 +23,51 @@ void TUI_displayLog(ScreenBuffer* sBuf, Log* log, int index) {
         }
     }
     updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
+}
+
+//-----------------------------------------
+
+//Base address of soundcard's FM ports
+//I believe this will be BAR 1
+//Ports are 0x00 - 0x0F
+//Define this very carefully!
+#define FMBASE 0xDE00
+
+//Some entries to describe our data file
+#define DAT_BANKOFF 0x8C40
+#define DAT_INSLEN 0x1C
+
+void IO_write8(UCHAR port, UCHAR data) {
+    DlPortWritePortUchar(FMBASE + port, data);
+    QPCuWait(10);
+}
+
+void IO_write8w(UCHAR port, UCHAR data) {
+    DlPortWritePortUchar(FMBASE + port, data);
+}
+
+void FM_startSynth() {
+    //these are probably not right
+    IO_write8(0x04, 72);
+    IO_write8(0x04, 72);
+    IO_write8(0x05, 0);
+    IO_write8(0x04, 127);
+    IO_write8(0x04, 127);
+    IO_write8(0x05, 0);
+    IO_write8(0x04, 54);
+    IO_write8(0x05, 153);//119
+    IO_write8(0x04, 107);
+    IO_write8(0x05, 0);
+    IO_write8(0x07, 66);
+    IO_write8(0x02, 5);
+    IO_write8(0x01, 128);
+}
+
+void FM_stopSynth() {
+    IO_write8(0x04, 72);
+    IO_write8(0x04, 72);
+    IO_write8(0x05, 16);
+    IO_write8(0x07, 98);
 }
 
 int main(int argc, char *argv[]) {
@@ -106,57 +108,66 @@ int main(int argc, char *argv[]) {
         FM_startSynth();
         while(isProgActive) {
             WORD vk; KSTATE ks;
-            
-            consumeEvents();
-            validateScreenBuf(&sBuf);
-            
-            if (sBuf.needsRedraw) {
-                clearScreen();
-                TUI_displayLog(&sBuf, pLog, index);
-                sBuf.needsRedraw = FALSE;
-            }
+            LogRow* lr = NULL;
+            LONGLONG curTime;
+            BOOL doIncrement;
             
             if (isPlaying) {
-                //playback
-                {
-                    LogRow* lr;
-                    LONGLONG curTime;
-                    
-                    QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
-                    if(curTime - lastMusTime > curMusWait) {
-                        lr = &pLog->data[index++];
-                        curMusWait = (LONGLONG)((double)lr->duration * baseClock);
-                        lastMusTime = curTime;
-                        
-                        IO_write8(lr->port, lr->data);
-                    } else {
-                        lr = &pLog->data[index];
+                if (doIncrement) {
+                    index++;
+                    if (index >= pLog->dataSize) {
+                        isPlaying = FALSE;
+                        index = pLog->dataSize - 1;
+                        TUI_displayLog(&sBuf, pLog, index);
                     }
+                    doIncrement = FALSE;
+                }
+                //playback
+                QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
+                if(curTime - lastMusTime > curMusWait) {
+                    lr = &pLog->data[index];
+                    curMusWait = (LONGLONG)((double)lr->duration * baseClock);
+                    lastMusTime = curTime;
+                    
+                    IO_write8(lr->port, lr->data);
+                    doIncrement = TRUE;
                 }
                 
                 //gui
-                {
-                    LONGLONG curTime;
-                    
-                    QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
-                    
-                    if(curTime - lastGuiTime > guiWait) {
-                        ks = getKeyVK(&vk);
-                        if (ks & KEY_DOWN) {
-                            if (ks & KEY_HEAD) {
-                                if (vk == VK_ESCAPE) {
-                                    isProgActive = FALSE;
-                                } else if (vk == VK_SPACE) {
-                                    isPlaying = FALSE;
-                                }
+                QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
+                if(curTime - lastGuiTime > guiWait) {
+                    ks = getKeyVK(&vk);
+                    if (ks & KEY_DOWN) {
+                        if (ks & KEY_HEAD) {
+                            if (vk == VK_ESCAPE) {
+                                //curMusWait = 0;
+                                isProgActive = FALSE;
+                            } else if (vk == VK_SPACE) {
+                                isPlaying = FALSE;
                             }
                         }
-                        TUI_displayLog(&sBuf, pLog, index);
-                        lastGuiTime = curTime;
                     }
+                    
+                    consumeEvents();
+                    validateScreenBuf(&sBuf);
+                    if (sBuf.needsRedraw) {
+                        clearScreen();
+                        sBuf.needsRedraw = FALSE;
+                    }
+                    
+                    TUI_displayLog(&sBuf, pLog, index);
+                    lastGuiTime = curTime;
                 }
-                //SwitchToThread();
+                SwitchToThread();
             } else {
+                consumeEvents();
+                validateScreenBuf(&sBuf);
+                if (sBuf.needsRedraw) {
+                    clearScreen();
+                    TUI_displayLog(&sBuf, pLog, index);
+                    sBuf.needsRedraw = FALSE;
+                }
+                
                 ks = getKeyVK(&vk);
                 if (ks & KEY_DOWN) {
                     BOOL invLog = FALSE;
@@ -169,13 +180,14 @@ int main(int argc, char *argv[]) {
                         invLog = TRUE;
                     } else if (vk == VK_NEXT) {
                         index += sBuf.wndSize.Y;
-                        if (index >= pLog->dataSize) index = pLog->dataSize;
+                        if (index >= pLog->dataSize) index = pLog->dataSize - 1;
                         invLog = TRUE;
                     } else if (vk == VK_UP) {
                         if (index > 0) index--;
                         invLog = TRUE;
                     } else if (vk == VK_DOWN) {
-                        if (index < pLog->dataSize) index++;
+                        index++;
+                        if (index >= pLog->dataSize) index = pLog->dataSize - 1;
                         invLog = TRUE;
                     }
                     //non-repeating keys
@@ -183,6 +195,7 @@ int main(int argc, char *argv[]) {
                         if (vk == VK_ESCAPE) {
                             isProgActive = FALSE;
                         } else if (vk == VK_SPACE) {
+                            doIncrement = FALSE;
                             if (pLog) isPlaying = TRUE;
                         }
                     }

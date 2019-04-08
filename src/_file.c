@@ -89,6 +89,9 @@ BOOL loadLog(Log* log, char* path) {
         int lineLen; char* pch;
         LogRow lr;
         
+        //commented out line
+        if (lineBuf[0] == '#') continue;
+        
         lineLen = strlen(lineBuf);
         if (lineLen == LINEMAX-1) {
             //I think we have a problem

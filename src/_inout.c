@@ -45,16 +45,16 @@ BOOL initInOut() {
     #undef CHK
 }
 
-void QPCuWait(DWORD uSecTime) {
+void QPCuWait(DWORD uSecTime) { //KeStallExecutionProcessor
     static LONGLONG freq=0;
-    LONGLONG start=0, cur=0, llTime=0;
+    LONGLONG start=0, cur=0, wait=0;
     
     if (freq == 0) QueryPerformanceFrequency((PLARGE_INTEGER)&freq);
     if (freq != 0) {
-        llTime = ((LONGLONG)uSecTime * freq)/1000000;
+        wait = ((LONGLONG)uSecTime * freq)/(LONGLONG)1000000;
         QueryPerformanceCounter((PLARGE_INTEGER)&start);
-        while (cur < (start + llTime)) {
-            SwitchToThread();
+        while (cur < (start + wait)) {
+            __asm__("pause");
             QueryPerformanceCounter((PLARGE_INTEGER)&cur);
         }
     } else {
