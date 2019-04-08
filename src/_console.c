@@ -29,7 +29,7 @@ static BOOL trimWriteRegion(ScreenBuffer* sBuf, PSMALL_RECT rect) {
 }
 
 void validateScreenBuf(ScreenBuffer* sBuf) {
-    COORD wndSize, bufSize;
+    COORD wndSize;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     int wipeSize;
     
@@ -52,7 +52,7 @@ void validateScreenBuf(ScreenBuffer* sBuf) {
 }
 
 void consumeEvents() {
-    DWORD iEvNum, dummy;
+    DWORD iEvNum;
     INPUT_RECORD ir;
     
     while (PeekConsoleInput(hIn, &ir, 1, &iEvNum) && iEvNum > 0) {
@@ -68,7 +68,7 @@ void consumeEvents() {
 }
 
 KSTATE getKeyVK(WORD* out) {
-    DWORD iEvNum, dummy;
+    DWORD iEvNum;
     INPUT_RECORD ir;
     KSTATE ks = KEY_NONE;
     
@@ -106,8 +106,6 @@ void clearScreen() {
 }
 
 COORD paintAttributeRect(ScreenBuffer* sBuf, SMALL_RECT rect, WORD attributes) {;
-    DWORD dummy;
-    
     if (!trimWriteRegion(sBuf, &rect)) return (COORD){-1, -1};
     
     for (int i=rect.Top; i < rect.Bottom; i++) {
@@ -120,10 +118,9 @@ COORD paintAttributeRect(ScreenBuffer* sBuf, SMALL_RECT rect, WORD attributes) {
     return (COORD){rect.Right, rect.Bottom};
 }
 
-COORD writeTextLine(ScreenBuffer* sBuf, COORD cord, char* format, ...) {
+COORD writeTextLine(ScreenBuffer* sBuf, COORD cord, int maxY, char* format, ...) {
     SMALL_RECT wReg;
     char tmp[256];
-    DWORD dummy;
     
     va_list args;
     va_start(args, format);
@@ -132,6 +129,7 @@ COORD writeTextLine(ScreenBuffer* sBuf, COORD cord, char* format, ...) {
     
     wReg = (SMALL_RECT){cord.X, cord.Y, cord.X+lstrlenA(tmp), cord.Y};
     if (!trimWriteRegion(sBuf, &wReg)) return (COORD){-1, -1};
+    if (wReg.Right > maxY) wReg.Right = maxY;
     
     for (int j=wReg.Left; j < wReg.Right; j++) {
         sBuf->data[cord.Y * sBuf->bufSize.X + j].Char.AsciiChar = tmp[j - wReg.Left];
@@ -146,8 +144,6 @@ void updateRegion(ScreenBuffer* sBuf, SMALL_RECT rect) {
 }
 
 void initTUIConsole(ScreenBuffer* sBuf, DWORD wl) {
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    
     whiteList = wl;
     hIn  = GetStdHandle(STD_INPUT_HANDLE);
     hOut = GetStdHandle(STD_OUTPUT_HANDLE);
