@@ -16,31 +16,35 @@
 
 void IO_write8(UCHAR port, UCHAR data) {
     DlPortWritePortUchar(FMBASE + port, data);
+}
+
+void IO_write8w(UCHAR port, UCHAR data) {
+    DlPortWritePortUchar(FMBASE + port, data);
     QPCuWait(50);
 }
 
 void FM_startSynth() {
     //these are probably not right
-    IO_write8(0x04, 72);
-    IO_write8(0x04, 72);
-    IO_write8(0x05, 0);
-    IO_write8(0x04, 127);
-    IO_write8(0x04, 127);
-    IO_write8(0x05, 0);
-    IO_write8(0x04, 54);
-    IO_write8(0x05, 153);//119
-    IO_write8(0x04, 107);
-    IO_write8(0x05, 0);
-    IO_write8(0x07, 66);
-    IO_write8(0x02, 5);
-    IO_write8(0x01, 128);
+    IO_write8w(0x04, 72);
+    IO_write8w(0x04, 72);
+    IO_write8w(0x05, 0);
+    IO_write8w(0x04, 127);
+    IO_write8w(0x04, 127);
+    IO_write8w(0x05, 0);
+    IO_write8w(0x04, 54);
+    IO_write8w(0x05, 153);//119
+    IO_write8w(0x04, 107);
+    IO_write8w(0x05, 0);
+    IO_write8w(0x07, 66);
+    IO_write8w(0x02, 5);
+    IO_write8w(0x01, 128);
 }
 
 void FM_stopSynth() {
-    IO_write8(0x04, 72);
-    IO_write8(0x04, 72);
-    IO_write8(0x05, 16);
-    IO_write8(0x07, 98);
+    IO_write8w(0x04, 72);
+    IO_write8w(0x04, 72);
+    IO_write8w(0x05, 16);
+    IO_write8w(0x07, 98);
 }
 
 void TUI_displayLog(ScreenBuffer* sBuf, Log* log, int index) {
@@ -194,21 +198,4 @@ int main(int argc, char *argv[]) {
     //printf("%d\n", 0b11000);
     
     return 0;
-}
-
-void sgfdsgQPCuWait(DWORD uSecTime) {
-    static LONGLONG freq=0;
-    LONGLONG start=0, cur=0, llTime=0;
-    
-    if (freq == 0) QueryPerformanceFrequency((PLARGE_INTEGER)&freq);
-    if (freq != 0) {
-        llTime = ((LONGLONG)uSecTime * freq)/1000000;
-        QueryPerformanceCounter((PLARGE_INTEGER)&start);
-        while (cur < (start + llTime)) {
-            SwitchToThread();
-            QueryPerformanceCounter((PLARGE_INTEGER)&cur);
-        }
-    } else {
-        //TODO: alternate timing mechanism
-    }
 }

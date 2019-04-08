@@ -1,6 +1,6 @@
 @echo off
 
-set gccbase=G:\p_files\rtdk\mingw32-gcc5
+set gccbase=G:\p_files\rtdk\i686-8.1.0-win32-dwarf-rt_v6-rev0\mingw32
 set fbcbase=G:\p_files\rtdk\FBC
 set PATH=%PATH%;%gccbase%\bin;%fbcbase%
 
