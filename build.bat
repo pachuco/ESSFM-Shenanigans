@@ -5,7 +5,7 @@ set fbcbase=G:\p_files\rtdk\FBC
 set PATH=%PATH%;%gccbase%\bin;%fbcbase%
 
 set opts=-std=c99 -mconsole -Os -s -Wall -Wextra
-set link=
+set link=-lcomdlg32
 
 set compiles=src\main.c
 set outname=ESS

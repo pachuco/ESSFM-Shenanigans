@@ -1,9 +1,8 @@
 #include <windows.h>
 
 typedef enum {
-    KEY_NONE = 0,
-    KEY_DOWN = 1<<0,
-    KEY_UP   = 1<<1,
+    KEY_ACTV = 1<<0,
+    KEY_DOWN = 1<<1,
     KEY_HEAD = 1<<2
 } KSTATE;
 
@@ -26,6 +25,32 @@ static BOOL trimWriteRegion(ScreenBuffer* sBuf, PSMALL_RECT rect) {
     if (rect->Bottom > sBuf->wndSize.Y) rect->Right = sBuf->wndSize.Y - 1;
     
     return TRUE;
+}
+
+KSTATE getKeyVK(WORD* out) {
+    DWORD iEvNum;
+    INPUT_RECORD ir;
+    KSTATE ks = 0;
+    
+    if (PeekConsoleInput(hIn, &ir, 1, &iEvNum) && iEvNum > 0 && ir.EventType == KEY_EVENT) {
+        BOOL isKDown = ir.Event.KeyEvent.bKeyDown;
+        WORD vk = ir.Event.KeyEvent.wVirtualKeyCode;
+        
+        if (vk > 0xFF) return 0;
+        
+        ReadConsoleInput(hIn, &ir, 1, &iEvNum);
+        ks |= KEY_ACTV;
+        ks |= !(isKDown && keyStates[vk]) ? KEY_HEAD : 0;
+        ks |= isKDown ? KEY_DOWN : 0;
+        
+        keyStates[vk] = (BYTE)isKDown;
+        if (out) *out = vk;
+    }
+    return ks;
+}
+
+void pressAnyKey() {
+    while (!getKeyVK(NULL)) SleepEx(1,1);
 }
 
 void validateScreenBuf(ScreenBuffer* sBuf) {
@@ -65,31 +90,6 @@ void consumeEvents() {
             return;
         }
     }
-}
-
-KSTATE getKeyVK(WORD* out) {
-    DWORD iEvNum;
-    INPUT_RECORD ir;
-    KSTATE ks = KEY_NONE;
-    
-    if (PeekConsoleInput(hIn, &ir, 1, &iEvNum) && iEvNum > 0 && ir.EventType == KEY_EVENT) {
-        BOOL isKDown = ir.Event.KeyEvent.bKeyDown;
-        WORD vk = ir.Event.KeyEvent.wVirtualKeyCode;
-        
-        if (vk > 0xFF) return KEY_NONE;
-        
-        ReadConsoleInput(hIn, &ir, 1, &iEvNum);
-        ks |= !(isKDown && keyStates[vk]) ? KEY_HEAD : 0;
-        ks |= isKDown ? KEY_DOWN : KEY_UP;
-        
-        keyStates[vk] = (BYTE)isKDown;
-        if (out) *out = vk;
-    }
-    return ks;
-}
-
-void pressAnyKey() {
-    while (!getKeyVK(NULL)) SleepEx(1,1);
 }
 
 void clearScreen() {

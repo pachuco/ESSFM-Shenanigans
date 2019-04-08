@@ -41,9 +41,8 @@ void IO_write8(UCHAR port, UCHAR data) {
     DlPortWritePortUchar(FMBASE + port, data);
     QPCuWait(10);
 }
-
-void IO_write8w(UCHAR port, UCHAR data) {
-    DlPortWritePortUchar(FMBASE + port, data);
+void IO_writeLogRow8(LogRow* lr) {
+    DlPortWritePortUchar(FMBASE + lr->port, lr->data);
 }
 
 void FM_startSynth() {
@@ -71,6 +70,7 @@ void FM_stopSynth() {
 }
 
 int main(int argc, char *argv[]) {
+    static char filePath[2048];
     static MemFile essdat;
     static Log log;
     static Log* pLog;
@@ -91,6 +91,7 @@ int main(int argc, char *argv[]) {
         LONGLONG baseClock;
         LONGLONG lastMusTime, curMusWait;
         LONGLONG lastGuiTime, guiWait;
+        BOOL isCtrlDown = FALSE;
         
         QueryPerformanceFrequency((PLARGE_INTEGER)&baseClock);
         lastMusTime = curMusWait = 0;
@@ -112,24 +113,25 @@ int main(int argc, char *argv[]) {
             LONGLONG curTime;
             BOOL doIncrement;
             
+            
             if (isPlaying) {
-                if (doIncrement) {
-                    index++;
-                    if (index >= pLog->dataSize) {
-                        isPlaying = FALSE;
-                        index = pLog->dataSize - 1;
-                        TUI_displayLog(&sBuf, pLog, index);
-                    }
-                    doIncrement = FALSE;
-                }
                 //playback
                 QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
                 if(curTime - lastMusTime > curMusWait) {
+                    if (doIncrement) {
+                        index++;
+                        if (index >= pLog->dataSize) {
+                            isPlaying = FALSE;
+                            index = pLog->dataSize - 1;
+                            TUI_displayLog(&sBuf, pLog, index);
+                        }
+                        doIncrement = FALSE;
+                    }
                     lr = &pLog->data[index];
                     curMusWait = (LONGLONG)((double)lr->duration * baseClock);
                     lastMusTime = curTime;
                     
-                    IO_write8(lr->port, lr->data);
+                    IO_writeLogRow8(lr);
                     doIncrement = TRUE;
                 }
                 
@@ -137,10 +139,9 @@ int main(int argc, char *argv[]) {
                 QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
                 if(curTime - lastGuiTime > guiWait) {
                     ks = getKeyVK(&vk);
-                    if (ks & KEY_DOWN) {
+                    if (ks & KEY_ACTV && ks & KEY_DOWN) {
                         if (ks & KEY_HEAD) {
                             if (vk == VK_ESCAPE) {
-                                //curMusWait = 0;
                                 isProgActive = FALSE;
                             } else if (vk == VK_SPACE) {
                                 isPlaying = FALSE;
@@ -169,37 +170,85 @@ int main(int argc, char *argv[]) {
                 }
                 
                 ks = getKeyVK(&vk);
-                if (ks & KEY_DOWN) {
-                    BOOL invLog = FALSE;
-                    
-                    //typematic keys
-                    if (vk == VK_F1) {
-                    } else if (vk == VK_PRIOR) {
-                        index -= sBuf.wndSize.Y;
-                        if (index < 0) index = 0;
-                        invLog = TRUE;
-                    } else if (vk == VK_NEXT) {
-                        index += sBuf.wndSize.Y;
-                        if (index >= pLog->dataSize) index = pLog->dataSize - 1;
-                        invLog = TRUE;
-                    } else if (vk == VK_UP) {
-                        if (index > 0) index--;
-                        invLog = TRUE;
-                    } else if (vk == VK_DOWN) {
-                        index++;
-                        if (index >= pLog->dataSize) index = pLog->dataSize - 1;
-                        invLog = TRUE;
-                    }
-                    //non-repeating keys
-                    if (ks & KEY_HEAD) {
-                        if (vk == VK_ESCAPE) {
-                            isProgActive = FALSE;
-                        } else if (vk == VK_SPACE) {
-                            doIncrement = FALSE;
-                            if (pLog) isPlaying = TRUE;
+                if (ks & KEY_ACTV) {
+                    if (ks & KEY_DOWN) {
+                        BOOL invLog = FALSE;
+                        
+                        //typematic keys
+                        if (vk == VK_F1) {
+                        } else if (vk == VK_PRIOR) {
+                            int oldInd = index;
+                            
+                            index -= sBuf.wndSize.Y;
+                            if (index < 0) index = 0;
+                            for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pLog->data[i]);
+                            invLog = TRUE;
+                        } else if (vk == VK_NEXT) {
+                            int oldInd = index;
+                            
+                            index += sBuf.wndSize.Y;
+                            if (index >= pLog->dataSize) index = pLog->dataSize - 1;
+                            for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pLog->data[i]);
+                            invLog = TRUE;
+                        } else if (vk == VK_UP) {
+                            if (isCtrlDown) IO_writeLogRow8(&pLog->data[index]);
+                            if (index > 0) index--;
+                            invLog = TRUE;
+                        } else if (vk == VK_DOWN) {
+                            if (isCtrlDown) IO_writeLogRow8(&pLog->data[index]);
+                            index++;
+                            if (index >= pLog->dataSize) index = pLog->dataSize - 1;
+                            invLog = TRUE;
+                        }
+                        //non-repeating keys
+                        if (ks & KEY_HEAD) {
+                            if (vk == VK_ESCAPE) {
+                                isProgActive = FALSE;
+                            } else if (vk == VK_SPACE) {
+                                doIncrement = FALSE;
+                                if (pLog) isPlaying = TRUE;
+                            } else if (vk == VK_F3) {
+                                OPENFILENAMEA ofna;
+                                
+                                ofna.lStructSize        = sizeof(OPENFILENAMEA);
+                                ofna.hwndOwner          = GetConsoleWindow();
+                                ofna.hInstance          = NULL;
+                                ofna.lpstrFilter        = "DbgView log\0*.LOG\0Any file\0*.*\0\0";
+                                ofna.lpstrCustomFilter  = NULL;
+                                ofna.nMaxCustFilter     = 0;
+                                ofna.nFilterIndex       = 1;
+                                ofna.lpstrFile          = filePath;
+                                ofna.nMaxFile           = 1024;
+                                ofna.lpstrFileTitle     = NULL;
+                                ofna.nMaxFileTitle      = 0;
+                                ofna.lpstrInitialDir    = NULL;
+                                ofna.lpstrTitle         = NULL;
+                                ofna.Flags              = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                                ofna.nFileOffset        = 0;
+                                ofna.nFileExtension     = 0;
+                                ofna.lpstrDefExt        = NULL;
+                                ofna.lCustData          = 0;
+                                ofna.lpfnHook           = NULL;
+                                ofna.lpTemplateName     = NULL;
+                                ofna.pvReserved         = NULL;
+                                ofna.dwReserved         = 0;
+                                ofna.FlagsEx            = 0;
+                                if (GetOpenFileNameA(&ofna) && loadLog(&log, ofna.lpstrFile)) {
+                                    pLog = &log;
+                                    invLog = TRUE;
+                                }
+                            } else if (vk == VK_CONTROL) {
+                                isCtrlDown = TRUE;
+                            }
+                        }
+                        if (invLog) TUI_displayLog(&sBuf, pLog, index);
+                    } else {
+                        if (ks & KEY_HEAD) {
+                            if (vk == VK_CONTROL) {
+                                isCtrlDown = FALSE;
+                            }
                         }
                     }
-                    if (invLog) TUI_displayLog(&sBuf, pLog, index);
                 }
                 SleepEx(1, 1);
             }
