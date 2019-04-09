@@ -1,6 +1,22 @@
 #include <windows.h>
 #include <stdio.h>
 
+//extracts filename from a path. Length includes \0
+typedef enum {EXPTH_FNAME, EXPTH_EXTENSION} EXPTH_T;
+static void exPartFromPath(char* dest, char* src, int max, EXPTH_T type) {
+    int i   = 0;
+    int len = strlen(src);
+    char* p = src+len;
+    
+    if (!len || !max) return;
+    if (max > len) max = len;
+    switch (type) {
+        case EXPTH_FNAME:       while (i<max && *p!='\\') {;p--;i++;} break;
+        case EXPTH_EXTENSION:   while (i<max && *p!='.' ) {;p--;i++;} break;
+    }
+    memcpy(dest, p+1, i);
+}
+
 //-------------------------------------
 
 typedef struct MemFile {
@@ -43,51 +59,51 @@ void closeMemFile(MemFile* mf) {
 
 //-------------------------------------
 
-typedef struct LogRow {
+typedef struct SongRow {
     float duration;
     UCHAR port;
     UCHAR data;
-} LogRow;
+} SongRow;
 
-typedef struct Log {
-    LogRow* data;
-    //both multiple of sizeof(LogRow)
+typedef struct Song {
+    SongRow* data;
+    //both multiple of sizeof(SongRow)
     int dataSize; 
     int allocSize;
-} Log;
+} Song;
 
-BOOL allocLog(Log* log, int size) {
+BOOL allocLog(Song* song, int size) {
     void* ptr;
     
-    if (!log->data || log->allocSize == 0) {
-        ptr = malloc(size * sizeof(LogRow));
+    if (!song->data) {
+        ptr = malloc(size * sizeof(SongRow));
     } else {
-        ptr = realloc(log->data, size * sizeof(LogRow));
+        ptr = realloc(song->data, size * sizeof(SongRow));
     }
     if (!ptr) return FALSE;
-    log->data = ptr;
-    log->dataSize = 0;
-    log->allocSize = size;
+    song->data = ptr;
+    song->dataSize = 0;
+    song->allocSize = size;
     
     return TRUE;
 }
 
-BOOL loadLog(Log* log, char* path) {
+BOOL loadLog(Song* song, char* path) {
     #define LINEMAX 1024
     FILE* fin;
     int fileSize; int index;
     char lineBuf[LINEMAX]; char split[]="\t ";
-    LogRow* prevLr = NULL;
+    SongRow* prevLr = NULL;
     
     
     if (!(fin = fopen(path, "r"))) return FALSE;
     fileSize = getFileSize(fin);
-    allocLog(log, fileSize/44); //44 is size of smallest log entry
+    allocLog(song, fileSize/44); //44 is size of smallest log entry
     
     index = 0;
     while(fgets(lineBuf, LINEMAX, fin)) {
         int lineLen; char* pch;
-        LogRow lr;
+        SongRow sRow;
         
         //commented out line
         if (lineBuf[0] == '#') continue;
@@ -102,8 +118,8 @@ BOOL loadLog(Log* log, char* path) {
         
         //DAT: timestamp
         if (!(pch = strtok(NULL, split))) continue;
-        lr.duration = strtof(pch, NULL);
-        if (index > 0) prevLr->duration = lr.duration - prevLr->duration;
+        sRow.duration = strtof(pch, NULL);
+        if (index > 0) prevLr->duration = sRow.duration - prevLr->duration;
         
         //STR: "__FAKE_WRITE_PORT_UCHAR:"
         if (!(pch = strtok(NULL, split))) continue;
@@ -115,8 +131,8 @@ BOOL loadLog(Log* log, char* path) {
         
         //DAT: port
         if (!(pch = strtok(NULL, split))) continue;
-        lr.port  = strtol(pch, NULL, 0);
-        lr.port &= 0x0F;
+        sRow.port  = strtol(pch, NULL, 0);
+        sRow.port &= 0x0F;
         
         //STR: "value"
         if (!(pch = strtok(NULL, split))) continue;
@@ -124,16 +140,16 @@ BOOL loadLog(Log* log, char* path) {
         
         //DAT: data
         if (!(pch = strtok(NULL, split))) continue;
-        lr.data = strtol(pch, NULL, 0);
+        sRow.data = strtol(pch, NULL, 0);
         
-        if (index >= log->allocSize) allocLog(log, log->allocSize + 512);
-        prevLr = &log->data[index];
-        log->data[index].duration = lr.duration;
-        log->data[index].port     = lr.port;
-        log->data[index].data     = lr.data;
-        log->dataSize = ++index;
+        if (index >= song->allocSize) allocLog(song, song->allocSize + 512);
+        prevLr = &song->data[index];
+        song->data[index].duration = sRow.duration;
+        song->data[index].port     = sRow.port;
+        song->data[index].data     = sRow.data;
+        song->dataSize = ++index;
     }
-    log->data[log->dataSize-1].duration = 0.0;
+    song->data[song->dataSize-1].duration = 0.0;
     fclose(fin);
     
     return TRUE;

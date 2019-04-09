@@ -10,7 +10,6 @@ typedef struct ScreenBuffer {
     COORD bufSize;
     COORD wndSize;
     CHAR_INFO* data;
-    BOOL needsRedraw;
 } ScreenBuffer;
 
 static HANDLE hOut = INVALID_HANDLE_VALUE;
@@ -53,10 +52,11 @@ void pressAnyKey() {
     while (!getKeyVK(NULL)) SleepEx(1,1);
 }
 
-void validateScreenBuf(ScreenBuffer* sBuf) {
+BOOL validateScreenBuf(ScreenBuffer* sBuf) {
     COORD wndSize;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
-    int wipeSize;
+    int allocSize;
+    BOOL isValid = TRUE;
     
     GetConsoleScreenBufferInfo(hOut, &csbi);
     wndSize.X = csbi.srWindow.Right  - csbi.srWindow.Left + 1;
@@ -64,16 +64,19 @@ void validateScreenBuf(ScreenBuffer* sBuf) {
     if (sBuf->wndSize.X != wndSize.X || sBuf->wndSize.Y != wndSize.Y) {
         sBuf->wndSize.X = wndSize.X;
         sBuf->wndSize.Y = wndSize.Y;
-        sBuf->needsRedraw = TRUE;
+        isValid = FALSE;
     }
     if (sBuf->bufSize.X != csbi.dwSize.X || sBuf->bufSize.Y != csbi.dwSize.Y) {
         sBuf->bufSize.X = csbi.dwSize.X;
         sBuf->bufSize.Y = csbi.dwSize.Y;
-        sBuf->needsRedraw = TRUE;
+        isValid = FALSE;
         
-        wipeSize = sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO);
-        sBuf->data = !sBuf->data ? malloc(wipeSize) : realloc(sBuf->data, wipeSize);
+        allocSize = sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO);
+        sBuf->data = !sBuf->data ? malloc(allocSize) : realloc(sBuf->data, allocSize);
     }
+    if (isValid) memset(sBuf->data, 0, sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO));
+    
+    return isValid;
 }
 
 void consumeEvents() {

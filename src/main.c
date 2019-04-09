@@ -4,29 +4,6 @@
 #include "_inout.c"
 #include "_console.c"
 
-void TUI_displayLog(ScreenBuffer* sBuf, Log* log, int index) {
-    SHORT vertMiddle = sBuf->wndSize.Y / 2;
-    WORD bckgAttr  = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-    WORD pointAttr = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
-    
-    paintAttributeRect(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y}, bckgAttr);
-    paintAttributeRect(sBuf, (SMALL_RECT){0, vertMiddle, sBuf->wndSize.X, vertMiddle+1}, pointAttr);
-    for (int i=0; i < sBuf->wndSize.Y; i++) {
-        int off = index + i - vertMiddle;
-        if (i != 0) printf("\n");
-        if (log && off >= 0 && off < log->dataSize) {
-            LogRow* lr = &log->data[off];
-            
-            writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, "%07d\xB3%2.8f\xB3h%1X\xB3h%02X\xB3", off, lr->duration, lr->port, lr->data);
-        } else {
-            writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, ".......\xB3..........\xB3..\xB3...\xB3");
-        }
-    }
-    updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
-}
-
-//-----------------------------------------
-
 //Base address of soundcard's FM ports
 //I believe this will be BAR 1
 //Ports are 0x00 - 0x0F
@@ -41,8 +18,8 @@ void IO_write8(UCHAR port, UCHAR data) {
     DlPortWritePortUchar(FMBASE + port, data);
     QPCuWait(10);
 }
-void IO_writeLogRow8(LogRow* lr) {
-    DlPortWritePortUchar(FMBASE + lr->port, lr->data);
+void IO_writeLogRow8(SongRow* sRow) {
+    DlPortWritePortUchar(FMBASE + sRow->port, sRow->data);
 }
 
 void FM_startSynth() {
@@ -69,11 +46,57 @@ void FM_stopSynth() {
     IO_write8(0x07, 98);
 }
 
+
+void drawTUI(ScreenBuffer* sBuf, Song* song, int index) {
+    { //log
+        SHORT vertMiddle = sBuf->wndSize.Y / 2;
+        WORD bckgAttr  = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+        WORD pointAttr = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
+        
+        paintAttributeRect(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y}, bckgAttr);
+        paintAttributeRect(sBuf, (SMALL_RECT){0, vertMiddle, sBuf->wndSize.X, vertMiddle+1}, pointAttr);
+        for (int i=0; i < sBuf->wndSize.Y; i++) {
+            int off = index + i - vertMiddle;
+            //if (i != 0) printf("\n");
+            if (song && off >= 0 && off < song->dataSize) {
+                SongRow* sRow = &song->data[off];
+                
+                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, "%07d\xB3%2.8f\xB3h%1X\xB3h%02X\xB3", off, sRow->duration, sRow->port, sRow->data);
+            } else {
+                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, ".......\xB3..........\xB3..\xB3...\xB3");
+            }
+        }
+        updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
+    }
+}
+
+BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
+    char ext[8];
+    BOOL success = TRUE;
+    
+    exPartFromPath(ext, inPath, 8, EXPTH_EXTENSION);
+    strupr(ext);
+    if (!strcmp(ext, "LOG")) {
+        if (!loadLog(outSong, inPath)) success = FALSE;
+    } else if (!strcmp(ext, "DRO")) {
+        //TODO
+    } else {
+        success = FALSE;
+    }
+    if (success && outFileName) {
+        exPartFromPath(outFileName, inPath, 256, EXPTH_FNAME);
+        SetConsoleTitleA(outFileName);
+    }
+        
+    return success;
+}
+
 int main(int argc, char *argv[]) {
     static char filePath[2048];
+    static char fileName[256];
     static MemFile essdat;
-    static Log log;
-    static Log* pLog;
+    static Song song;
+    static Song* pSong = NULL;
     
     if (!initInOut()) {
         printf("Failed to init InpOut!\n");
@@ -84,9 +107,9 @@ int main(int argc, char *argv[]) {
     //    return 1;
     //}
     
-    { //log player mode
+    { //song player mode
         BOOL isProgActive=TRUE, isPlaying=FALSE;
-        ScreenBuffer sBuf; memset(&sBuf, 0, sizeof(ScreenBuffer));
+        ScreenBuffer screen; memset(&screen, 0, sizeof(ScreenBuffer));
         int index=0;
         LONGLONG baseClock;
         LONGLONG lastMusTime, curMusWait;
@@ -98,45 +121,44 @@ int main(int argc, char *argv[]) {
         lastGuiTime = 0;
         guiWait = (LONGLONG)baseClock * 0.1;
         
-        initTUIConsole(&sBuf, KEY_EVENT);
+        initTUIConsole(&screen, KEY_EVENT);
         
         if (argc >= 2) {
-            if (loadLog(&log, argv[1])) {
-                pLog = &log;
+            if (loadSong(argv[1], fileName, &song)) {
+                pSong = &song;
             }
         }
         
         FM_startSynth();
         while(isProgActive) {
             WORD vk; KSTATE ks;
-            LogRow* lr = NULL;
+            SongRow* sRow = NULL;
             LONGLONG curTime;
             BOOL doIncrement;
             
             
             if (isPlaying) {
-                //playback
                 QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
+                //playback
                 if(curTime - lastMusTime > curMusWait) {
                     if (doIncrement) {
                         index++;
-                        if (index >= pLog->dataSize) {
+                        if (index >= pSong->dataSize) {
                             isPlaying = FALSE;
-                            index = pLog->dataSize - 1;
-                            TUI_displayLog(&sBuf, pLog, index);
+                            index = pSong->dataSize - 1;
+                            drawTUI(&screen, pSong, index);
                         }
                         doIncrement = FALSE;
                     }
-                    lr = &pLog->data[index];
-                    curMusWait = (LONGLONG)((double)lr->duration * baseClock);
+                    sRow = &pSong->data[index];
+                    curMusWait = (LONGLONG)((double)sRow->duration * baseClock);
                     lastMusTime = curTime;
                     
-                    IO_writeLogRow8(lr);
+                    IO_writeLogRow8(sRow);
                     doIncrement = TRUE;
                 }
                 
                 //gui
-                QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
                 if(curTime - lastGuiTime > guiWait) {
                     ks = getKeyVK(&vk);
                     if (ks & KEY_ACTV && ks & KEY_DOWN) {
@@ -150,55 +172,49 @@ int main(int argc, char *argv[]) {
                     }
                     
                     consumeEvents();
-                    validateScreenBuf(&sBuf);
-                    if (sBuf.needsRedraw) {
-                        clearScreen();
-                        sBuf.needsRedraw = FALSE;
-                    }
+                    validateScreenBuf(&screen);
                     
-                    TUI_displayLog(&sBuf, pLog, index);
+                    drawTUI(&screen, pSong, index);
                     lastGuiTime = curTime;
                 }
                 SwitchToThread();
             } else {
                 consumeEvents();
-                validateScreenBuf(&sBuf);
-                if (sBuf.needsRedraw) {
-                    clearScreen();
-                    TUI_displayLog(&sBuf, pLog, index);
-                    sBuf.needsRedraw = FALSE;
+                if (!validateScreenBuf(&screen)) {
+                    drawTUI(&screen, pSong, index);
                 }
                 
                 ks = getKeyVK(&vk);
                 if (ks & KEY_ACTV) {
                     if (ks & KEY_DOWN) {
-                        BOOL invLog = FALSE;
+                        BOOL needScreenRedraw = FALSE;
                         
                         //typematic keys
-                        if (vk == VK_F1) {
-                        } else if (vk == VK_PRIOR) {
-                            int oldInd = index;
-                            
-                            index -= sBuf.wndSize.Y;
-                            if (index < 0) index = 0;
-                            if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pLog->data[i]);
-                            invLog = TRUE;
-                        } else if (vk == VK_NEXT) {
-                            int oldInd = index;
-                            
-                            index += sBuf.wndSize.Y;
-                            if (index >= pLog->dataSize) index = pLog->dataSize - 1;
-                            if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pLog->data[i]);
-                            invLog = TRUE;
-                        } else if (vk == VK_UP) {
-                            if (isCtrlDown) IO_writeLogRow8(&pLog->data[index]);
-                            if (index > 0) index--;
-                            invLog = TRUE;
-                        } else if (vk == VK_DOWN) {
-                            if (isCtrlDown) IO_writeLogRow8(&pLog->data[index]);
-                            index++;
-                            if (index >= pLog->dataSize) index = pLog->dataSize - 1;
-                            invLog = TRUE;
+                        if (pSong) {
+                            if (vk == VK_PRIOR) {
+                                int oldInd = index;
+                                
+                                index -= screen.wndSize.Y;
+                                if (index < 0) index = 0;
+                                if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pSong->data[i]);
+                                needScreenRedraw = TRUE;
+                            } else if (vk == VK_NEXT) {
+                                int oldInd = index;
+                                
+                                index += screen.wndSize.Y;
+                                if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                                if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pSong->data[i]);
+                                needScreenRedraw = TRUE;
+                            } else if (vk == VK_UP) {
+                                if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                                if (index > 0) index--;
+                                needScreenRedraw = TRUE;
+                            } else if (vk == VK_DOWN) {
+                                if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                                index++;
+                                if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                                needScreenRedraw = TRUE;
+                            }
                         }
                         //non-repeating keys
                         if (ks & KEY_HEAD) {
@@ -206,7 +222,7 @@ int main(int argc, char *argv[]) {
                                 isProgActive = FALSE;
                             } else if (vk == VK_SPACE) {
                                 doIncrement = FALSE;
-                                if (pLog) isPlaying = TRUE;
+                                if (pSong) isPlaying = TRUE;
                             } else if (vk == VK_F3) {
                                 OPENFILENAMEA ofna;
                                 
@@ -219,7 +235,7 @@ int main(int argc, char *argv[]) {
                                 ofna.nFilterIndex       = 1;
                                 ofna.lpstrFile          = filePath;
                                 ofna.nMaxFile           = 1024;
-                                ofna.lpstrFileTitle     = NULL;
+                                ofna.lpstrFileTitle     = fileName;
                                 ofna.nMaxFileTitle      = 0;
                                 ofna.lpstrInitialDir    = NULL;
                                 ofna.lpstrTitle         = NULL;
@@ -233,15 +249,16 @@ int main(int argc, char *argv[]) {
                                 ofna.pvReserved         = NULL;
                                 ofna.dwReserved         = 0;
                                 ofna.FlagsEx            = 0;
-                                if (GetOpenFileNameA(&ofna) && loadLog(&log, ofna.lpstrFile)) {
-                                    pLog = &log;
-                                    invLog = TRUE;
+                                
+                                if (GetOpenFileNameA(&ofna) && loadSong(ofna.lpstrFile, fileName, &song)) {
+                                    pSong = &song;
+                                    needScreenRedraw = TRUE;
                                 }
                             } else if (vk == VK_CONTROL) {
                                 isCtrlDown = TRUE;
                             }
                         }
-                        if (invLog) TUI_displayLog(&sBuf, pLog, index);
+                        if (needScreenRedraw) drawTUI(&screen, pSong, index);
                     } else {
                         if (ks & KEY_HEAD) {
                             if (vk == VK_CONTROL) {
@@ -255,6 +272,7 @@ int main(int argc, char *argv[]) {
         }
         FM_stopSynth();
         clearScreen();
+        if (pSong && pSong->data) free(pSong->data);
     }
     
     //printf("%d\n", 0b11000);
