@@ -181,14 +181,14 @@ int main(int argc, char *argv[]) {
                             
                             index -= sBuf.wndSize.Y;
                             if (index < 0) index = 0;
-                            for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pLog->data[i]);
+                            if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pLog->data[i]);
                             invLog = TRUE;
                         } else if (vk == VK_NEXT) {
                             int oldInd = index;
                             
                             index += sBuf.wndSize.Y;
                             if (index >= pLog->dataSize) index = pLog->dataSize - 1;
-                            for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pLog->data[i]);
+                            if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pLog->data[i]);
                             invLog = TRUE;
                         } else if (vk == VK_UP) {
                             if (isCtrlDown) IO_writeLogRow8(&pLog->data[index]);
