@@ -94,6 +94,19 @@ BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
     return success;
 }
 
+
+typedef enum {
+    ACT_REDRAW  = 1<<0,
+    ACT_LOAD    = 1<<1,
+    ACT_PAUSE   = 1<<2,
+    ACT_PLAY    = 1<<3,
+    ACT_EXIT    = 1<<4,
+    ACT_PGUP    = 1<<5,
+    ACT_PGDOWN  = 1<<6,
+    ACT_UP      = 1<<7,
+    ACT_DOWN    = 1<<8,
+} ACTIONS;
+
 int main(int argc, char *argv[]) {
     static char filePath[2048];
     static char fileName[256];
@@ -138,6 +151,7 @@ int main(int argc, char *argv[]) {
             SongRow* sRow = NULL;
             LONGLONG curTime;
             BOOL doIncrement;
+            DWORD action;
             
             
             if (isPlaying) {
@@ -149,7 +163,7 @@ int main(int argc, char *argv[]) {
                         if (index >= pSong->dataSize) {
                             isPlaying = FALSE;
                             index = pSong->dataSize - 1;
-                            drawTUI(&screen, pSong, index);
+                            action |= ACT_REDRAW;
                         }
                         doIncrement = FALSE;
                     }
@@ -166,10 +180,9 @@ int main(int argc, char *argv[]) {
                     ks = getKeyVK(&vk);
                     if (ks & KEY_ACTV && ks & KEY_DOWN) {
                         if (ks & KEY_HEAD) {
-                            if (vk == VK_ESCAPE) {
-                                isProgActive = FALSE;
-                            } else if (vk == VK_SPACE) {
-                                isPlaying = FALSE;
+                            switch (vk) {
+                                case VK_ESCAPE: action |= ACT_EXIT;  break;
+                                case VK_SPACE:  action |= ACT_PAUSE; break;
                             }
                         }
                     }
@@ -177,92 +190,36 @@ int main(int argc, char *argv[]) {
                     consumeEvents();
                     validateScreenBuf(&screen);
                     
-                    drawTUI(&screen, pSong, index);
+                    action |= ACT_REDRAW;
                     lastGuiTime = curTime;
                 }
                 SwitchToThread();
+                
             } else {
                 consumeEvents();
-                if (!validateScreenBuf(&screen)) {
-                    drawTUI(&screen, pSong, index);
-                }
+                if (!validateScreenBuf(&screen)) action |= ACT_REDRAW;
                 
                 ks = getKeyVK(&vk);
                 if (ks & KEY_ACTV) {
                     if (ks & KEY_DOWN) {
-                        BOOL needScreenRedraw = FALSE;
-                        
                         //typematic keys
                         if (pSong) {
-                            if (vk == VK_PRIOR) {
-                                int oldInd = index;
-                                
-                                index -= screen.wndSize.Y;
-                                if (index < 0) index = 0;
-                                if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pSong->data[i]);
-                                needScreenRedraw = TRUE;
-                            } else if (vk == VK_NEXT) {
-                                int oldInd = index;
-                                
-                                index += screen.wndSize.Y;
-                                if (index >= pSong->dataSize) index = pSong->dataSize - 1;
-                                if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pSong->data[i]);
-                                needScreenRedraw = TRUE;
-                            } else if (vk == VK_UP) {
-                                if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
-                                if (index > 0) index--;
-                                needScreenRedraw = TRUE;
-                            } else if (vk == VK_DOWN) {
-                                if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
-                                index++;
-                                if (index >= pSong->dataSize) index = pSong->dataSize - 1;
-                                needScreenRedraw = TRUE;
+                            switch (vk) {
+                                case VK_PRIOR:      action |= ACT_PGUP;   break;
+                                case VK_NEXT:       action |= ACT_PGDOWN; break;
+                                case VK_UP:         action |= ACT_UP;     break;
+                                case ACT_DOWN:      action |= ACT_DOWN;   break;
                             }
                         }
                         //non-repeating keys
                         if (ks & KEY_HEAD) {
-                            if (vk == VK_ESCAPE) {
-                                isProgActive = FALSE;
-                            } else if (vk == VK_SPACE) {
-                                doIncrement = FALSE;
-                                if (pSong) isPlaying = TRUE;
-                            } else if (vk == VK_F3) {
-                                OPENFILENAMEA ofna;
-                                
-                                ofna.lStructSize        = sizeof(OPENFILENAMEA);
-                                ofna.hwndOwner          = GetConsoleWindow();
-                                ofna.hInstance          = NULL;
-                                ofna.lpstrFilter        = "DbgView log\0*.LOG\0Any file\0*.*\0\0";
-                                ofna.lpstrCustomFilter  = NULL;
-                                ofna.nMaxCustFilter     = 0;
-                                ofna.nFilterIndex       = 1;
-                                ofna.lpstrFile          = filePath;
-                                ofna.nMaxFile           = 1024;
-                                ofna.lpstrFileTitle     = fileName;
-                                ofna.nMaxFileTitle      = 0;
-                                ofna.lpstrInitialDir    = NULL;
-                                ofna.lpstrTitle         = NULL;
-                                ofna.Flags              = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-                                ofna.nFileOffset        = 0;
-                                ofna.nFileExtension     = 0;
-                                ofna.lpstrDefExt        = NULL;
-                                ofna.lCustData          = 0;
-                                ofna.lpfnHook           = NULL;
-                                ofna.lpTemplateName     = NULL;
-                                ofna.pvReserved         = NULL;
-                                ofna.dwReserved         = 0;
-                                ofna.FlagsEx            = 0;
-                                
-                                if (GetOpenFileNameA(&ofna) && loadSong(ofna.lpstrFile, fileName, &song)) {
-                                    index = 0;
-                                    pSong = &song;
-                                    needScreenRedraw = TRUE;
-                                }
-                            } else if (vk == VK_CONTROL) {
-                                isCtrlDown = TRUE;
+                            switch (vk) {
+                                case VK_ESCAPE:     action |= ACT_EXIT; break;
+                                case VK_SPACE:      action |= ACT_PLAY; break;
+                                case VK_F3:         action |= ACT_LOAD; break;
+                                case VK_CONTROL:    isCtrlDown = TRUE;  break;
                             }
                         }
-                        if (needScreenRedraw) drawTUI(&screen, pSong, index);
                     } else {
                         if (ks & KEY_HEAD) {
                             if (vk == VK_CONTROL) {
@@ -273,6 +230,92 @@ int main(int argc, char *argv[]) {
                 }
                 SleepEx(1, 1);
             }
+            
+            if (action) {
+                if (action & ACT_LOAD) {
+                    OPENFILENAMEA ofna;
+                    
+                    ofna.lStructSize        = sizeof(OPENFILENAMEA);
+                    ofna.hwndOwner          = GetConsoleWindow();
+                    ofna.hInstance          = NULL;
+                    ofna.lpstrFilter        = "DbgView log\0*.LOG\0Any file\0*.*\0\0";
+                    ofna.lpstrCustomFilter  = NULL;
+                    ofna.nMaxCustFilter     = 0;
+                    ofna.nFilterIndex       = 1;
+                    ofna.lpstrFile          = filePath;
+                    ofna.nMaxFile           = 1024;
+                    ofna.lpstrFileTitle     = fileName;
+                    ofna.nMaxFileTitle      = 0;
+                    ofna.lpstrInitialDir    = NULL;
+                    ofna.lpstrTitle         = NULL;
+                    ofna.Flags              = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                    ofna.nFileOffset        = 0;
+                    ofna.nFileExtension     = 0;
+                    ofna.lpstrDefExt        = NULL;
+                    ofna.lCustData          = 0;
+                    ofna.lpfnHook           = NULL;
+                    ofna.lpTemplateName     = NULL;
+                    ofna.pvReserved         = NULL;
+                    ofna.dwReserved         = 0;
+                    ofna.FlagsEx            = 0;
+                    
+                    if (GetOpenFileNameA(&ofna) && loadSong(ofna.lpstrFile, fileName, &song)) {
+                        index = 0;
+                        pSong = &song;
+                        action |= ACT_REDRAW;
+                    }
+                }
+                if (action & ACT_PLAY) {
+                    doIncrement = FALSE;
+                    if (pSong) isPlaying = TRUE;
+                }
+                
+                if (action & ACT_PAUSE) {
+                    isPlaying = FALSE;
+                }
+                
+                if (action & ACT_EXIT) {
+                    isProgActive = FALSE;
+                }
+                
+                if (action & ACT_PGUP) {
+                    int oldInd = index;
+                    
+                    index -= screen.wndSize.Y;
+                    if (index < 0) index = 0;
+                    if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pSong->data[i]);
+                    action |= ACT_REDRAW;
+                }
+                
+                if (action & ACT_PGDOWN) {
+                    int oldInd = index;
+                    
+                    index += screen.wndSize.Y;
+                    if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                    if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pSong->data[i]);
+                    action |= ACT_REDRAW;
+                }
+                
+                if (action & ACT_UP) {
+                    if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                    if (index > 0) index--;
+                    action |= ACT_REDRAW;
+                }
+                
+                if (action & ACT_DOWN) {
+                    if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                    index++;
+                    if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                    action |= ACT_REDRAW;
+                }
+                
+                if (action & ACT_REDRAW) {
+                    drawTUI(&screen, pSong, index);
+                }
+                
+                action = 0;
+            }
+            
         }
         FM_stopSynth();
         clearScreen();
