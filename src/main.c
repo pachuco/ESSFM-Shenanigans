@@ -3,6 +3,7 @@
 #include "_file.c"
 #include "_inout.c"
 #include "_console.c"
+#include "_tests.c"
 
 //Base address of soundcard's FM ports
 //I believe this will be BAR 1
@@ -76,10 +77,12 @@ BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
     
     exPartFromPath(ext, inPath, 8, EXPTH_EXTENSION);
     strupr(ext);
-    if (!strcmp(ext, "LOG")) {
-        if (!loadLog(outSong, inPath)) success = FALSE;
-    } else if (!strcmp(ext, "DRO")) {
+    if        (!strcmp(ext, "LOG")) {
+        if (!loadDbgViewLog(outSong, inPath)) success = FALSE;
+        //if (success) TEST_ESS_doesPort3WriteOnly012(outSong);
+    } else if (!strcmp(ext, "RAW")) {
         //TODO
+        //if (!loadRdosRawOpl(outSong, inPath)) success = FALSE;
     } else {
         success = FALSE;
     }
@@ -251,6 +254,7 @@ int main(int argc, char *argv[]) {
                                 ofna.FlagsEx            = 0;
                                 
                                 if (GetOpenFileNameA(&ofna) && loadSong(ofna.lpstrFile, fileName, &song)) {
+                                    index = 0;
                                     pSong = &song;
                                     needScreenRedraw = TRUE;
                                 }

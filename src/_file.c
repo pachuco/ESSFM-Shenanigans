@@ -72,33 +72,34 @@ typedef struct Song {
     int allocSize;
 } Song;
 
-BOOL allocLog(Song* song, int size) {
-    void* ptr;
+BOOL loadRdosRawOpl(Song* song, char* path) {
+    FILE* fin;
     
-    if (!song->data) {
-        ptr = malloc(size * sizeof(SongRow));
-    } else {
-        ptr = realloc(song->data, size * sizeof(SongRow));
-    }
-    if (!ptr) return FALSE;
-    song->data = ptr;
-    song->dataSize = 0;
-    song->allocSize = size;
-    
-    return TRUE;
+    int fileSize; int index;
+    if (!(fin = fopen(path, "rb"))) return FALSE;
+    fileSize = getFileSize(fin);
 }
 
-BOOL loadLog(Song* song, char* path) {
+BOOL loadDbgViewLog(Song* song, char* path) {
     #define LINEMAX 1024
     FILE* fin;
     int fileSize; int index;
     char lineBuf[LINEMAX]; char split[]="\t ";
     SongRow* prevLr = NULL;
-    
+    int crudeEstimate; 
     
     if (!(fin = fopen(path, "r"))) return FALSE;
     fileSize = getFileSize(fin);
-    allocLog(song, fileSize/44); //44 is size of smallest log entry
+    crudeEstimate = fileSize/44; //44 is size of smallest log entry
+    
+    if (!song->data) {
+        song->data = malloc(crudeEstimate * sizeof(SongRow));
+    } else {
+        song->data = realloc(song->data, crudeEstimate * sizeof(SongRow));
+    }
+    if (!song->data) return FALSE;
+    song->dataSize = 0;
+    song->allocSize = crudeEstimate;
     
     index = 0;
     while(fgets(lineBuf, LINEMAX, fin)) {
@@ -106,6 +107,7 @@ BOOL loadLog(Song* song, char* path) {
         SongRow sRow;
         
         //commented out line
+        //DbgView treats these as invalid, but we don't!
         if (lineBuf[0] == '#') continue;
         
         lineLen = strlen(lineBuf);
@@ -142,8 +144,12 @@ BOOL loadLog(Song* song, char* path) {
         if (!(pch = strtok(NULL, split))) continue;
         sRow.data = strtol(pch, NULL, 0);
         
-        if (index >= song->allocSize) allocLog(song, song->allocSize + 512);
+        if (index >= song->allocSize) {
+            song->allocSize += 512;
+            song->data = realloc(song->data, song->allocSize * sizeof(SongRow));
+        }
         prevLr = &song->data[index];
+        
         song->data[index].duration = sRow.duration;
         song->data[index].port     = sRow.port;
         song->data[index].data     = sRow.data;
