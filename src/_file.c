@@ -59,10 +59,15 @@ void closeMemFile(MemFile* mf) {
 
 //-------------------------------------
 
+typedef enum {
+    SR_INACTIVE = 1<<0
+} SRBITFIELD;
+
 typedef struct SongRow {
     float duration;
     UCHAR port;
     UCHAR data;
+    UCHAR bitfield;
 } SongRow;
 
 typedef struct Song {
