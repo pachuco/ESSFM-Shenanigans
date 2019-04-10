@@ -177,17 +177,9 @@ int main(int argc, char *argv[]) {
                 
                 //gui
                 if(curTime - lastGuiTime > guiWait) {
-                    ks = getKeyVK(&vk);
-                    if (ks & KEY_ACTV && ks & KEY_DOWN) {
-                        if (ks & KEY_HEAD) {
-                            switch (vk) {
-                                case VK_ESCAPE: action |= ACT_EXIT;  break;
-                                case VK_SPACE:  action |= ACT_PAUSE; break;
-                            }
-                        }
-                    }
-                    
                     consumeEvents();
+                    ks = getKeyVK(&vk);
+                    
                     validateScreenBuf(&screen);
                     
                     action |= ACT_REDRAW;
@@ -197,38 +189,31 @@ int main(int argc, char *argv[]) {
                 
             } else {
                 consumeEvents();
-                if (!validateScreenBuf(&screen)) action |= ACT_REDRAW;
-                
                 ks = getKeyVK(&vk);
-                if (ks & KEY_ACTV) {
-                    if (ks & KEY_DOWN) {
-                        //typematic keys
-                        if (pSong) {
-                            switch (vk) {
-                                case VK_PRIOR:      action |= ACT_PGUP;   break;
-                                case VK_NEXT:       action |= ACT_PGDOWN; break;
-                                case VK_UP:         action |= ACT_UP;     break;
-                                case ACT_DOWN:      action |= ACT_DOWN;   break;
-                            }
-                        }
-                        //non-repeating keys
-                        if (ks & KEY_HEAD) {
-                            switch (vk) {
-                                case VK_ESCAPE:     action |= ACT_EXIT; break;
-                                case VK_SPACE:      action |= ACT_PLAY; break;
-                                case VK_F3:         action |= ACT_LOAD; break;
-                                case VK_CONTROL:    isCtrlDown = TRUE;  break;
-                            }
-                        }
-                    } else {
-                        if (ks & KEY_HEAD) {
-                            if (vk == VK_CONTROL) {
-                                isCtrlDown = FALSE;
-                            }
+                if (!validateScreenBuf(&screen)) action |= ACT_REDRAW;
+                SleepEx(1, 1);
+            }
+            
+            if (ks & KEY_ACTV) {
+                if (ks & KEY_DOWN) {
+                    if (ks & KEY_HEAD) {
+                        switch (vk) {
+                            case VK_ESCAPE:     action |= ACT_EXIT;  break;
+                            case VK_SPACE:      action |= isPlaying ? ACT_PAUSE : ACT_PLAY; break;
+                            case VK_F3:         if (!isPlaying) action |= ACT_LOAD; break;
                         }
                     }
+                    switch (vk) {
+                        case VK_PRIOR:      if (!isPlaying) action |= ACT_PGUP;   break;
+                        case VK_NEXT:       if (!isPlaying) action |= ACT_PGDOWN; break;
+                        case VK_UP:         if (!isPlaying) action |= ACT_UP;     break;
+                        case ACT_DOWN:      if (!isPlaying) action |= ACT_DOWN;   break;
+                        
+                        case VK_CONTROL:    isCtrlDown = TRUE;  break;
+                    }
+                } else {
+                    if (vk == VK_CONTROL) isCtrlDown = FALSE;
                 }
-                SleepEx(1, 1);
             }
             
             if (action) {
@@ -265,6 +250,7 @@ int main(int argc, char *argv[]) {
                         action |= ACT_REDRAW;
                     }
                 }
+                
                 if (action & ACT_PLAY) {
                     doIncrement = FALSE;
                     if (pSong) isPlaying = TRUE;
