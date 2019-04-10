@@ -74,7 +74,7 @@ BOOL validateScreenBuf(ScreenBuffer* sBuf) {
         allocSize = sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO);
         sBuf->data = !sBuf->data ? malloc(allocSize) : realloc(sBuf->data, allocSize);
     }
-    if (isValid) memset(sBuf->data, 0, sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO));
+    if (!isValid) memset(sBuf->data, 0, sBuf->bufSize.X * sBuf->bufSize.Y * sizeof(CHAR_INFO));
     
     return isValid;
 }

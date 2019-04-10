@@ -62,9 +62,9 @@ void drawTUI(ScreenBuffer* sBuf, Song* song, int index) {
             if (song && off >= 0 && off < song->dataSize) {
                 SongRow* sRow = &song->data[off];
                 
-                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, "%07d\xB3%2.8f\xB3h%1X\xB3h%02X\xB3", off, sRow->duration, sRow->port, sRow->data);
+                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, "%07d\xB3%11.8f\xB3h%1X\xB3h%02X\xB3", off, sRow->duration, sRow->port, sRow->data);
             } else {
-                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, ".......\xB3..........\xB3..\xB3...\xB3");
+                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, ".......\xB3...........\xB3..\xB3...\xB3");
             }
         }
         updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
@@ -204,10 +204,10 @@ int main(int argc, char *argv[]) {
                         }
                     }
                     switch (vk) {
-                        case VK_PRIOR:      if (!isPlaying) action |= ACT_PGUP;   break;
-                        case VK_NEXT:       if (!isPlaying) action |= ACT_PGDOWN; break;
-                        case VK_UP:         if (!isPlaying) action |= ACT_UP;     break;
-                        case ACT_DOWN:      if (!isPlaying) action |= ACT_DOWN;   break;
+                        case VK_PRIOR:      if (!isPlaying && pSong) action |= ACT_PGUP;   break;
+                        case VK_NEXT:       if (!isPlaying && pSong) action |= ACT_PGDOWN; break;
+                        case VK_UP:         if (!isPlaying && pSong) action |= ACT_UP;     break;
+                        case VK_DOWN:       if (!isPlaying && pSong) action |= ACT_DOWN;   break;
                         
                         case VK_CONTROL:    isCtrlDown = TRUE;  break;
                     }
@@ -301,7 +301,6 @@ int main(int argc, char *argv[]) {
                 
                 action = 0;
             }
-            
         }
         FM_stopSynth();
         clearScreen();
