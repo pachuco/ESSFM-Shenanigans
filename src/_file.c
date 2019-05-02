@@ -179,9 +179,11 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
 
 BOOL loadDbgViewLog(Song* song, char* path) {
     #define LINEMAX 1024
+    #define DELSENS 0.0001
     FILE* fin;
     int fileSize;
     int index = 0;
+    double delay = 0.0;
     char lineBuf[LINEMAX]; char split[]="\t ";
     int crudeEstimate; 
     
@@ -206,10 +208,23 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         if (!(pch = strtok(lineBuf, split))) continue;
         //ignored
         
-        //DAT: timestamp
+        //DAT: timestamp -> duration
+        //one step behind the read
         if (!(pch = strtok(NULL, split))) continue;
         sRow.duration = strtof(pch, NULL);
-        if (index > 0) song->rows[index-1].duration = sRow.duration - song->rows[index-1].duration;
+        if (index > 0) {
+            SongRow* prev = &song->rows[index-1];
+            float diff = sRow.duration - prev->duration;
+            
+            if (diff < DELSENS) {
+                prev->duration = 0.0;
+                delay += diff;
+                //Beep(1000, 20);
+            } else {
+                prev->duration = diff + delay;
+                delay = 0.0;
+            }
+        }
         
         //STR: "__FAKE_WRITE_PORT_UCHAR:"
         if (!(pch = strtok(NULL, split))) continue;
@@ -234,7 +249,7 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         
         if (!songReallocIfNeeded(song, index, 512)) goto _ERR;
         
-        song->rows[index].duration = sRow.duration;
+        song->rows[index].duration = sRow.duration; //read current timestamp
         song->rows[index].port     = sRow.port;
         song->rows[index].data     = sRow.data;
         song->dataSize = ++index;
@@ -248,6 +263,7 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         if (fin) fclose(fin);
         return FALSE;
     #undef LINEMAX
+    #undef DELSENS
 }
 
 //-------------------------------------
