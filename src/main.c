@@ -6,7 +6,7 @@
 #include "_fm.c"
 
 void drawTUI(ScreenBuffer* sBuf, Song* song, int index) {
-    static int vertDelim = 2;
+    static int vertDelim = 1;
     static WORD bckgAttr = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
     
     paintAttributeRect(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y}, bckgAttr);
@@ -84,13 +84,12 @@ int main(int argc, char *argv[]) {
     //}
     
     { //song player mode
-        BOOL isProgActive=TRUE, isPlaying=FALSE;
+        BOOL isProgActive=TRUE, isPlaying=FALSE, isCtrlDown=FALSE;
         ScreenBuffer screen; memset(&screen, 0, sizeof(ScreenBuffer));
         int index=0;
         LONGLONG baseClock;
         LONGLONG lastMusTime, curMusWait;
         LONGLONG lastGuiTime, guiWait;
-        BOOL isCtrlDown = FALSE;
         
         QueryPerformanceFrequency((PLARGE_INTEGER)&baseClock);
         lastMusTime = curMusWait = 0;
@@ -105,7 +104,6 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        FM_startSynth();
         while(isProgActive) {
             WORD vk; KSTATE ks;
             SongRow* sRow = NULL;
@@ -118,7 +116,7 @@ int main(int argc, char *argv[]) {
                 QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
                 //playback
                 if(curTime - lastMusTime > curMusWait) {
-                    do {
+                    for (int i=0; i < 64; i++) {
                         if (doIncrement) {
                             index++;
                             if (index >= pSong->dataSize) {
@@ -131,11 +129,11 @@ int main(int argc, char *argv[]) {
                         sRow = &pSong->rows[index];
                         curMusWait = (LONGLONG)((double)sRow->duration * baseClock);
                         IO_writeLogRow8(sRow);
-                        QPCuWait(INNACURATE_USEC_WAIT);
                         lastMusTime = curTime;
                         
                         doIncrement = TRUE;
-                    } while (curMusWait == 0.0 && isPlaying);
+                        if (curMusWait != 0.0 || !isPlaying) break;
+                    }
                 }
                 
                 //gui
@@ -162,18 +160,28 @@ int main(int argc, char *argv[]) {
                 if (ks & KEY_DOWN) {
                     if (ks & KEY_HEAD) {
                         switch (vk) {
-                            case VK_ESCAPE:     action |= ACT_EXIT;  break;
                             case VK_SPACE:      action |= isPlaying ? ACT_PAUSE : ACT_PLAY; break;
-                            case VK_F3:         if (!isPlaying) action |= ACT_LOAD; break;
+                            case VK_ESCAPE:
+                                if (isPlaying) action |= ACT_PAUSE;
+                                action |= ACT_EXIT;
+                                break;
+                            case VK_F3:
+                                if (isPlaying) action |= ACT_PAUSE;
+                                action |= ACT_LOAD;
+                                break;
                         }
                     }
+                    if (!isPlaying) {
+                        switch (vk) {
+                            case VK_PRIOR:      action |= ACT_PGUP;   break;
+                            case VK_NEXT:       action |= ACT_PGDOWN; break;
+                            case VK_UP:         action |= ACT_UP;     break;
+                            case VK_DOWN:       action |= ACT_DOWN;   break;
+                        }
+                    }
+                    
                     switch (vk) {
-                        case VK_PRIOR:      if (!isPlaying && pSong) action |= ACT_PGUP;   break;
-                        case VK_NEXT:       if (!isPlaying && pSong) action |= ACT_PGDOWN; break;
-                        case VK_UP:         if (!isPlaying && pSong) action |= ACT_UP;     break;
-                        case VK_DOWN:       if (!isPlaying && pSong) action |= ACT_DOWN;   break;
-                        
-                        case VK_CONTROL:    isCtrlDown = TRUE;  break;
+                        case VK_CONTROL: isCtrlDown = TRUE;  break;
                     }
                 } else {
                     if (vk == VK_CONTROL) isCtrlDown = FALSE;
@@ -182,6 +190,10 @@ int main(int argc, char *argv[]) {
             
             //actions
             if (action) {
+                if (action & ACT_EXIT) {
+                    isProgActive = FALSE;
+                }
+                
                 if (action & ACT_LOAD) {
                     OPENFILENAMEA ofna;
                     #define F_LOG "DbgView log\0*.LOG\0"
@@ -216,57 +228,58 @@ int main(int argc, char *argv[]) {
                         index = 0;
                         pSong = &song;
                         action |= ACT_REDRAW;
+                        FM_stopSynth();
+                        FM_startSynth();
                     }
+                    #undef F_LOG
+                    #undef F_RAW
+                    #undef F_ANY
                 }
                 
-                if (action & ACT_PLAY) {
-                    doIncrement = FALSE;
-                    if (pSong) isPlaying = TRUE;
-                }
-                
-                if (action & ACT_PAUSE) {
-                    isPlaying = FALSE;
-                }
-                
-                if (action & ACT_EXIT) {
-                    isProgActive = FALSE;
-                }
-                
-                if (action & ACT_PGUP) {
-                    int oldInd = index;
+                if (pSong) {
+                    if (action & ACT_PLAY) {
+                        doIncrement = FALSE;
+                        isPlaying = TRUE;
+                    }
                     
-                    index -= screen.wndSize.Y;
-                    if (index < 0) index = 0;
-                    if (isCtrlDown) for (int i=oldInd; i >= index; i--) {
-                        IO_writeLogRow8(&pSong->rows[i]);
-                        QPCuWait(INNACURATE_USEC_WAIT);
+                    if (action & ACT_PAUSE) {
+                        isPlaying = FALSE;
                     }
-                    action |= ACT_REDRAW;
-                }
-                
-                if (action & ACT_PGDOWN) {
-                    int oldInd = index;
                     
-                    index += screen.wndSize.Y;
-                    if (index >= pSong->dataSize) index = pSong->dataSize - 1;
-                    if (isCtrlDown) for (int i=oldInd; i < index; i++) {
-                        IO_writeLogRow8(&pSong->rows[i]);
-                        QPCuWait(INNACURATE_USEC_WAIT);
+                    if (action & ACT_PGUP) {
+                        int oldInd = index;
+                        
+                        index -= screen.wndSize.Y;
+                        if (index < 0) index = 0;
+                        if (isCtrlDown) for (int i=oldInd; i >= index; i--) {
+                            IO_writeLogRow8(&pSong->rows[i]);
+                        }
+                        action |= ACT_REDRAW;
                     }
-                    action |= ACT_REDRAW;
-                }
-                
-                if (action & ACT_UP) {
-                    if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
-                    if (index > 0) index--;
-                    action |= ACT_REDRAW;
-                }
-                
-                if (action & ACT_DOWN) {
-                    if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
-                    index++;
-                    if (index >= pSong->dataSize) index = pSong->dataSize - 1;
-                    action |= ACT_REDRAW;
+                    
+                    if (action & ACT_PGDOWN) {
+                        int oldInd = index;
+                        
+                        index += screen.wndSize.Y;
+                        if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                        if (isCtrlDown) for (int i=oldInd; i < index; i++) {
+                            IO_writeLogRow8(&pSong->rows[i]);
+                        }
+                        action |= ACT_REDRAW;
+                    }
+                    
+                    if (action & ACT_UP) {
+                        if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
+                        if (index > 0) index--;
+                        action |= ACT_REDRAW;
+                    }
+                    
+                    if (action & ACT_DOWN) {
+                        if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
+                        index++;
+                        if (index >= pSong->dataSize) index = pSong->dataSize - 1;
+                        action |= ACT_REDRAW;
+                    }
                 }
                 
                 if (action & ACT_REDRAW) {
