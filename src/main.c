@@ -86,8 +86,7 @@ BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
         if (!loadDbgViewLog(outSong, inPath)) success = FALSE;
         //if (success) TEST_ESS_doesPort3WriteOnly012(outSong);
     } else if (!strcmp(ext, "RAW")) {
-        //TODO
-        //if (!loadRdosRawOpl(outSong, inPath)) success = FALSE;
+        if (!loadRdosRawOpl(outSong, inPath)) success = FALSE;
     } else {
         success = FALSE;
     }
@@ -163,21 +162,24 @@ int main(int argc, char *argv[]) {
                 QueryPerformanceCounter((PLARGE_INTEGER)&curTime);
                 //playback
                 if(curTime - lastMusTime > curMusWait) {
-                    if (doIncrement) {
-                        index++;
-                        if (index >= pSong->dataSize) {
-                            isPlaying = FALSE;
-                            index = pSong->dataSize - 1;
-                            action |= ACT_REDRAW;
+                    do {
+                        if (doIncrement) {
+                            index++;
+                            if (index >= pSong->dataSize) {
+                                isPlaying = FALSE;
+                                index = pSong->dataSize - 1;
+                                action |= ACT_REDRAW;
+                            }
+                            doIncrement = FALSE;
                         }
-                        doIncrement = FALSE;
-                    }
-                    sRow = &pSong->data[index];
-                    curMusWait = (LONGLONG)((double)sRow->duration * baseClock);
-                    lastMusTime = curTime;
-                    
-                    IO_writeLogRow8(sRow);
-                    doIncrement = TRUE;
+                        sRow = &pSong->rows[index];
+                        curMusWait = (LONGLONG)((double)sRow->duration * baseClock);
+                        IO_writeLogRow8(sRow);
+                        QPCuWait(INNACURATE_USEC_WAIT);
+                        lastMusTime = curTime;
+                        
+                        doIncrement = TRUE;
+                    } while (curMusWait == 0.0 && isPlaying);
                 }
                 
                 //gui
@@ -199,6 +201,7 @@ int main(int argc, char *argv[]) {
                 SleepEx(1, 1);
             }
             
+            //key handling
             if (ks & KEY_ACTV) {
                 if (ks & KEY_DOWN) {
                     if (ks & KEY_HEAD) {
@@ -221,14 +224,18 @@ int main(int argc, char *argv[]) {
                 }
             }
             
+            //actions
             if (action) {
                 if (action & ACT_LOAD) {
                     OPENFILENAMEA ofna;
+                    #define F_LOG "DbgView log\0*.LOG\0"
+                    #define F_RAW "RDOS raw opl\0*.RAW\0"
+                    #define F_ANY "Any file\0*.*\0"
                     
                     ofna.lStructSize        = sizeof(OPENFILENAMEA);
                     ofna.hwndOwner          = GetConsoleWindow();
                     ofna.hInstance          = NULL;
-                    ofna.lpstrFilter        = "DbgView log\0*.LOG\0Any file\0*.*\0\0";
+                    ofna.lpstrFilter        = F_ANY F_LOG F_RAW "\0";
                     ofna.lpstrCustomFilter  = NULL;
                     ofna.nMaxCustFilter     = 0;
                     ofna.nFilterIndex       = 1;
