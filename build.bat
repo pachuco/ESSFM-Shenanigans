@@ -7,7 +7,7 @@ set PATH=%PATH%;%gccbase%\bin;%fbcbase%
 set opts=-std=c99 -mconsole -Os -s -Wall -Wextra
 set link=-lcomdlg32
 
-set compiles=src\main.c
+set compiles=src\main.c src\file.c src\sup_console.c src\sup_inout.c
 set outname=ESS
 
 del %outname%.exe
