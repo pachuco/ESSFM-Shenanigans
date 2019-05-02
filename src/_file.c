@@ -82,7 +82,7 @@ typedef struct Song {
     int allocSize;
 } Song;
 
-BOOL songAlloc(Song* song, int estimate) {
+static BOOL songAlloc(Song* song, int estimate) {
     if (!song->rows) {
         song->rows = malloc(estimate * sizeof(SongRow));
     } else {
@@ -96,7 +96,7 @@ BOOL songAlloc(Song* song, int estimate) {
     return TRUE;
 }
 
-BOOL songReallocIfNeeded(Song* song, int index, int amount) {
+static BOOL songReallocIfNeeded(Song* song, int index, int amount) {
     if (index >= song->allocSize) {
         song->allocSize += amount;
         song->rows = realloc(song->rows, song->allocSize * sizeof(SongRow));
@@ -111,7 +111,7 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     int index = 0;
     int crudeEstimate;
     BYTE raw_magic[8];
-    BYTE raw_delayNum = 0;
+    int raw_delayNum = 0;
     BOOL raw_isChipHigh = FALSE;
     USHORT raw_clock;
     
@@ -140,6 +140,7 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 switch (val) {
                     case 0x00: //clock change
                         fread((void*)&raw_clock, 2, 1, fin);
+                        
                         break;
                     case 0x01: //write low
                         raw_isChipHigh = FALSE;
@@ -151,22 +152,22 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 break;
             default: //normal register
                 if (index > 0) {
-                    song->rows[index-1].duration = (float)((raw_delayNum) * raw_clock) / 1193180.0;
+                    song->rows[index-1].duration = (float)(raw_delayNum * raw_clock) / 1193180.0;
                 }
                 raw_delayNum = 0;
                 
-                if (!songReallocIfNeeded(song, index, 64)) goto _ERR;
+                if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                
                 song->rows[index].port = (raw_isChipHigh ? 2 : 0);
                 song->rows[index].data = reg;
                 song->rows[index++].duration = 0.0;
-                
-                if (!songReallocIfNeeded(song, index, 64)) goto _ERR;
                 song->rows[index].port = (raw_isChipHigh ? 3 : 1);
                 song->rows[index].data = val;
                 song->rows[index++].duration = 0.0;
                 song->dataSize = index;
                 break;
         }
+        if (!raw_clock) raw_clock = 0xFFFF;
     }
     song->type = SNG_OPLX;
     fclose(fin);
