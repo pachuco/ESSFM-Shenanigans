@@ -1,9 +1,9 @@
 #include <windows.h>
 #include <stdio.h>
+#include "file.h"
 
 //extracts filename from a path. Length includes \0
-typedef enum {EXPTH_FNAME, EXPTH_EXTENSION} EXPTH_T;
-static void exPartFromPath(char* dest, char* src, int max, EXPTH_T type) {
+void exPartFromPath(char* dest, char* src, int max, EXPTH_T type) {
     int i   = 0;
     int len = strlen(src);
     char* p = src+len;
@@ -18,11 +18,6 @@ static void exPartFromPath(char* dest, char* src, int max, EXPTH_T type) {
 }
 
 //-------------------------------------
-
-typedef struct MemFile {
-    char* data;
-    int size;
-} MemFile;
 
 int getFileSize(FILE* f) {
     int origPos = ftell(f);
@@ -58,29 +53,6 @@ void closeMemFile(MemFile* mf) {
 }
 
 //-------------------------------------
-
-typedef enum {
-    SNG_OPLX, SNG_ESS
-} SONG_TYPE;
-
-typedef enum {
-    SR_INACTIVE = 1<<0
-} SONGROW_BITFIELD;
-
-typedef struct SongRow {
-    float duration;
-    UCHAR port;
-    UCHAR data;
-    UCHAR bitfield;
-} SongRow;
-
-typedef struct Song {
-    SongRow* rows;
-    int type;
-    //both multiple of sizeof(SongRow)
-    int dataSize; 
-    int allocSize;
-} Song;
 
 static BOOL songAlloc(Song* song, int estimate) {
     if (!song->rows) {
@@ -268,10 +240,6 @@ BOOL loadDbgViewLog(Song* song, char* path) {
 }
 
 //-------------------------------------
-
-typedef struct Config {
-    USHORT basePort;
-} Config;
 
 BOOL loadConfig(char* path, Config* conf) {
     return TRUE;

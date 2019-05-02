@@ -1,16 +1,5 @@
 #include <windows.h>
-
-typedef enum {
-    KEY_ACTV = 1<<0,
-    KEY_DOWN = 1<<1,
-    KEY_HEAD = 1<<2
-} KSTATE;
-
-typedef struct ScreenBuffer {
-    COORD bufSize;
-    COORD wndSize;
-    CHAR_INFO* data;
-} ScreenBuffer;
+#include "support.h"
 
 static HANDLE hOut = INVALID_HANDLE_VALUE;
 static HANDLE hIn = INVALID_HANDLE_VALUE;
