@@ -60,8 +60,12 @@ void closeMemFile(MemFile* mf) {
 //-------------------------------------
 
 typedef enum {
+    SNG_OPLX, SNG_ESS
+} SONG_TYPE;
+
+typedef enum {
     SR_INACTIVE = 1<<0
-} SRBITFIELD;
+} SONGROW_BITFIELD;
 
 typedef struct SongRow {
     float duration;
@@ -72,6 +76,7 @@ typedef struct SongRow {
 
 typedef struct Song {
     SongRow* rows;
+    int type;
     //both multiple of sizeof(SongRow)
     int dataSize; 
     int allocSize;
@@ -91,11 +96,13 @@ BOOL songAlloc(Song* song, int estimate) {
     return TRUE;
 }
 
-void songReallocIfNeeded(Song* song, int index, int amount) {
+BOOL songReallocIfNeeded(Song* song, int index, int amount) {
     if (index >= song->allocSize) {
         song->allocSize += amount;
         song->rows = realloc(song->rows, song->allocSize * sizeof(SongRow));
+        if (!song->rows) return FALSE;
     }
+    return TRUE;
 }
 
 BOOL loadRdosRawOpl(Song* song, char* path) {
@@ -108,15 +115,15 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     BOOL raw_isChipHigh = FALSE;
     USHORT raw_clock;
     
-    if (!(fin = fopen(path, "rb"))) return FALSE;
+    if (!(fin = fopen(path, "rb"))) goto _ERR;
     fileSize = getFileSize(fin);
     
     fread((void*)&raw_magic, 8, 1, fin);
-    if (memcmp(raw_magic, "RAWADATA", 8)) return FALSE;
+    if (memcmp(raw_magic, "RAWADATA", 8)) goto _ERR;
     fread((void*)&raw_clock, 2, 1, fin);
     
     crudeEstimate = (fileSize - ftell(fin));
-    if (!songAlloc(song, crudeEstimate)) return FALSE;
+    if (!songAlloc(song, crudeEstimate)) goto _ERR;
     
     while(!feof(fin)) {
         BYTE val, reg;
@@ -148,12 +155,12 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 }
                 raw_delayNum = 0;
                 
-                songReallocIfNeeded(song, index, 512);
+                if (!songReallocIfNeeded(song, index, 64)) goto _ERR;
                 song->rows[index].port = (raw_isChipHigh ? 2 : 0);
                 song->rows[index].data = reg;
                 song->rows[index++].duration = 0.0;
                 
-                songReallocIfNeeded(song, index, 512);
+                if (!songReallocIfNeeded(song, index, 64)) goto _ERR;
                 song->rows[index].port = (raw_isChipHigh ? 3 : 1);
                 song->rows[index].data = val;
                 song->rows[index++].duration = 0.0;
@@ -161,8 +168,13 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 break;
         }
     }
+    song->type = SNG_OPLX;
+    fclose(fin);
     
     return TRUE;
+    _ERR:
+        if (fin) fclose(fin);
+        return FALSE;
 }
 
 BOOL loadDbgViewLog(Song* song, char* path) {
@@ -173,10 +185,10 @@ BOOL loadDbgViewLog(Song* song, char* path) {
     char lineBuf[LINEMAX]; char split[]="\t ";
     int crudeEstimate; 
     
-    if (!(fin = fopen(path, "r"))) return FALSE;
+    if (!(fin = fopen(path, "r"))) goto _ERR;
     fileSize = getFileSize(fin);
     crudeEstimate = fileSize/44; //44 is size of smallest log entry
-    if (!songAlloc(song, crudeEstimate)) return FALSE;
+    if (!songAlloc(song, crudeEstimate)) goto _ERR;
     
     while(fgets(lineBuf, LINEMAX, fin)) {
         int lineLen; char* pch;
@@ -220,7 +232,7 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         if (!(pch = strtok(NULL, split))) continue;
         sRow.data = strtol(pch, NULL, 0);
         
-        songReallocIfNeeded(song, index, 512);
+        if (!songReallocIfNeeded(song, index, 512)) goto _ERR;
         
         song->rows[index].duration = sRow.duration;
         song->rows[index].port     = sRow.port;
@@ -228,9 +240,13 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         song->dataSize = ++index;
     }
     song->rows[song->dataSize-1].duration = 0.0;
+    song->type = SNG_ESS;
     fclose(fin);
     
     return TRUE;
+    _ERR:
+        if (fin) fclose(fin);
+        return FALSE;
     #undef LINEMAX
 }
 
