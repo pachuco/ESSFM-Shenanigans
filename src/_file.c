@@ -100,10 +100,69 @@ void songReallocIfNeeded(Song* song, int index, int amount) {
 
 BOOL loadRdosRawOpl(Song* song, char* path) {
     FILE* fin;
+    int fileSize;
+    int index = 0;
+    int crudeEstimate;
+    BYTE raw_magic[8];
+    BYTE raw_delayNum = 0;
+    BOOL raw_isChipHigh = FALSE;
+    USHORT raw_clock;
     
-    int fileSize; int index;
     if (!(fin = fopen(path, "rb"))) return FALSE;
     fileSize = getFileSize(fin);
+    
+    fread((void*)&raw_magic, 8, 1, fin);
+    if (memcmp(raw_magic, "RAWADATA", 8)) return FALSE;
+    fread((void*)&raw_clock, 2, 1, fin);
+    
+    crudeEstimate = (fileSize - ftell(fin));
+    if (!songAlloc(song, crudeEstimate)) return FALSE;
+    
+    while(!feof(fin)) {
+        BYTE val, reg;
+        
+        fread((void*)&val, 1, 1, fin);
+        fread((void*)&reg, 1, 1, fin);
+        
+        if (val == 0xFF && reg == 0xFF) break; //EOF
+        switch(reg) {
+            case 0x00: //delay
+                raw_delayNum += val;
+                break;
+            case 0x02: //control
+                switch (val) {
+                    case 0x00: //clock change
+                        fread((void*)&raw_clock, 2, 1, fin);
+                        break;
+                    case 0x01: //write low
+                        raw_isChipHigh = FALSE;
+                        break;
+                    case 0x02: //write high
+                        raw_isChipHigh = TRUE;
+                        break;
+                }
+                break;
+            default: //normal register
+                if (index > 0) {
+                    song->rows[index-1].duration = (float)((raw_delayNum) * raw_clock) / 1193180.0;
+                }
+                raw_delayNum = 0;
+                
+                songReallocIfNeeded(song, index, 512);
+                song->rows[index].port = (raw_isChipHigh ? 2 : 0);
+                song->rows[index].data = reg;
+                song->rows[index++].duration = 0.0;
+                
+                songReallocIfNeeded(song, index, 512);
+                song->rows[index].port = (raw_isChipHigh ? 3 : 1);
+                song->rows[index].data = val;
+                song->rows[index++].duration = 0.0;
+                song->dataSize = index;
+                break;
+        }
+    }
+    
+    return TRUE;
 }
 
 BOOL loadDbgViewLog(Song* song, char* path) {
