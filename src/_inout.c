@@ -45,6 +45,7 @@ BOOL initInOut() {
     #undef CHK
 }
 
+//not very accurate
 void QPCuWait(DWORD uSecTime) { //KeStallExecutionProcessor
     static LONGLONG freq=0;
     LONGLONG start=0, cur=0, wait=0;

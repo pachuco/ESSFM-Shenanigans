@@ -71,11 +71,32 @@ typedef struct SongRow {
 } SongRow;
 
 typedef struct Song {
-    SongRow* data;
+    SongRow* rows;
     //both multiple of sizeof(SongRow)
     int dataSize; 
     int allocSize;
 } Song;
+
+BOOL songAlloc(Song* song, int estimate) {
+    if (!song->rows) {
+        song->rows = malloc(estimate * sizeof(SongRow));
+    } else {
+        song->rows = realloc(song->rows, estimate * sizeof(SongRow));
+    }
+    if (!song->rows) return FALSE;
+    
+    song->dataSize = 0;
+    song->allocSize = estimate;
+    
+    return TRUE;
+}
+
+void songReallocIfNeeded(Song* song, int index, int amount) {
+    if (index >= song->allocSize) {
+        song->allocSize += amount;
+        song->rows = realloc(song->rows, song->allocSize * sizeof(SongRow));
+    }
+}
 
 BOOL loadRdosRawOpl(Song* song, char* path) {
     FILE* fin;
@@ -88,25 +109,16 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
 BOOL loadDbgViewLog(Song* song, char* path) {
     #define LINEMAX 1024
     FILE* fin;
-    int fileSize; int index;
+    int fileSize;
+    int index = 0;
     char lineBuf[LINEMAX]; char split[]="\t ";
-    SongRow* prevLr = NULL;
     int crudeEstimate; 
     
     if (!(fin = fopen(path, "r"))) return FALSE;
     fileSize = getFileSize(fin);
     crudeEstimate = fileSize/44; //44 is size of smallest log entry
+    if (!songAlloc(song, crudeEstimate)) return FALSE;
     
-    if (!song->data) {
-        song->data = malloc(crudeEstimate * sizeof(SongRow));
-    } else {
-        song->data = realloc(song->data, crudeEstimate * sizeof(SongRow));
-    }
-    if (!song->data) return FALSE;
-    song->dataSize = 0;
-    song->allocSize = crudeEstimate;
-    
-    index = 0;
     while(fgets(lineBuf, LINEMAX, fin)) {
         int lineLen; char* pch;
         SongRow sRow;
@@ -126,7 +138,7 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         //DAT: timestamp
         if (!(pch = strtok(NULL, split))) continue;
         sRow.duration = strtof(pch, NULL);
-        if (index > 0) prevLr->duration = sRow.duration - prevLr->duration;
+        if (index > 0) song->rows[index-1].duration = sRow.duration - song->rows[index-1].duration;
         
         //STR: "__FAKE_WRITE_PORT_UCHAR:"
         if (!(pch = strtok(NULL, split))) continue;
@@ -149,18 +161,14 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         if (!(pch = strtok(NULL, split))) continue;
         sRow.data = strtol(pch, NULL, 0);
         
-        if (index >= song->allocSize) {
-            song->allocSize += 512;
-            song->data = realloc(song->data, song->allocSize * sizeof(SongRow));
-        }
-        prevLr = &song->data[index];
+        songReallocIfNeeded(song, index, 512);
         
-        song->data[index].duration = sRow.duration;
-        song->data[index].port     = sRow.port;
-        song->data[index].data     = sRow.data;
+        song->rows[index].duration = sRow.duration;
+        song->rows[index].port     = sRow.port;
+        song->rows[index].data     = sRow.data;
         song->dataSize = ++index;
     }
-    song->data[song->dataSize-1].duration = 0.0;
+    song->rows[song->dataSize-1].duration = 0.0;
     fclose(fin);
     
     return TRUE;

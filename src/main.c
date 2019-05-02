@@ -10,6 +10,7 @@
 //Ports are 0x00 - 0x0F
 //Define this very carefully!
 #define FMBASE 0xDE00
+#define INNACURATE_USEC_WAIT 15
 
 //Some entries to describe our data file
 #define DAT_BANKOFF 0x8C40
@@ -17,7 +18,7 @@
 
 void IO_write8(UCHAR port, UCHAR data) {
     DlPortWritePortUchar(FMBASE + port, data);
-    QPCuWait(10);
+    QPCuWait(INNACURATE_USEC_WAIT);
 }
 void IO_writeLogRow8(SongRow* sRow) {
     DlPortWritePortUchar(FMBASE + sRow->port, sRow->data);
@@ -49,26 +50,30 @@ void FM_stopSynth() {
 
 
 void drawTUI(ScreenBuffer* sBuf, Song* song, int index) {
-    { //log
-        SHORT vertMiddle = sBuf->wndSize.Y / 2;
-        WORD bckgAttr  = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+    static int vertDelim = 2;
+    static WORD bckgAttr = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+    
+    paintAttributeRect(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y}, bckgAttr);
+    
+    {
+        //log
+        SHORT vertMiddle = (sBuf->wndSize.Y - vertDelim) / 2;
         WORD pointAttr = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
         
-        paintAttributeRect(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y}, bckgAttr);
-        paintAttributeRect(sBuf, (SMALL_RECT){0, vertMiddle, sBuf->wndSize.X, vertMiddle+1}, pointAttr);
-        for (int i=0; i < sBuf->wndSize.Y; i++) {
+        paintAttributeRect(sBuf, (SMALL_RECT){0, vertDelim+vertMiddle, sBuf->wndSize.X-1, vertDelim+vertMiddle+1}, pointAttr);
+        for (int i=0; i < sBuf->wndSize.Y - vertDelim; i++) {
             int off = index + i - vertMiddle;
-            //if (i != 0) printf("\n");
+            
             if (song && off >= 0 && off < song->dataSize) {
-                SongRow* sRow = &song->data[off];
+                SongRow* sRow = &song->rows[off];
                 
-                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, "%07d\xB3%11.8f\xB3h%1X\xB3h%02X\xB3", off, sRow->duration, sRow->port, sRow->data);
+                writeTextLine(sBuf, (COORD){0, vertDelim + i}, sBuf->wndSize.X - 1, "%07d\xB3%11.8f\xB3h%1X\xB3h%02X\xB3", off, sRow->duration, sRow->port, sRow->data);
             } else {
-                writeTextLine(sBuf, (COORD){0, i}, sBuf->wndSize.X - 1, ".......\xB3...........\xB3..\xB3...\xB3");
+                writeTextLine(sBuf, (COORD){0, vertDelim + i}, sBuf->wndSize.X - 1, ".......\xB3...........\xB3..\xB3...\xB3");
             }
         }
-        updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
     }
+    updateRegion(sBuf, (SMALL_RECT){0, 0, sBuf->wndSize.X, sBuf->wndSize.Y});
 }
 
 BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
@@ -269,7 +274,10 @@ int main(int argc, char *argv[]) {
                     
                     index -= screen.wndSize.Y;
                     if (index < 0) index = 0;
-                    if (isCtrlDown) for (int i=oldInd; i >= index; i--) IO_writeLogRow8(&pSong->data[i]);
+                    if (isCtrlDown) for (int i=oldInd; i >= index; i--) {
+                        IO_writeLogRow8(&pSong->rows[i]);
+                        QPCuWait(INNACURATE_USEC_WAIT);
+                    }
                     action |= ACT_REDRAW;
                 }
                 
@@ -278,18 +286,21 @@ int main(int argc, char *argv[]) {
                     
                     index += screen.wndSize.Y;
                     if (index >= pSong->dataSize) index = pSong->dataSize - 1;
-                    if (isCtrlDown) for (int i=oldInd; i < index; i++) IO_writeLogRow8(&pSong->data[i]);
+                    if (isCtrlDown) for (int i=oldInd; i < index; i++) {
+                        IO_writeLogRow8(&pSong->rows[i]);
+                        QPCuWait(INNACURATE_USEC_WAIT);
+                    }
                     action |= ACT_REDRAW;
                 }
                 
                 if (action & ACT_UP) {
-                    if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                    if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
                     if (index > 0) index--;
                     action |= ACT_REDRAW;
                 }
                 
                 if (action & ACT_DOWN) {
-                    if (isCtrlDown) IO_writeLogRow8(&pSong->data[index]);
+                    if (isCtrlDown) IO_writeLogRow8(&pSong->rows[index]);
                     index++;
                     if (index >= pSong->dataSize) index = pSong->dataSize - 1;
                     action |= ACT_REDRAW;
@@ -304,7 +315,7 @@ int main(int argc, char *argv[]) {
         }
         FM_stopSynth();
         clearScreen();
-        if (pSong && pSong->data) free(pSong->data);
+        if (pSong && pSong->rows) free(pSong->rows);
     }
     
     //printf("%d\n", 0b11000);
