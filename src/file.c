@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <stdio.h>
+#include "support.h"
 #include "file.h"
 
 //extracts filename from a path. Length includes \0
@@ -77,13 +78,106 @@ static BOOL songReallocIfNeeded(Song* song, int index, int amount) {
     return TRUE;
 }
 
+BOOL loadDosboxDro(Song* song, char* path) {
+    FILE* fin;
+    int fileSize;
+    int crudeEstimate;
+    int index = 0;
+    int delayNum = 0;
+    BYTE dro_magic[8];
+    DWORD dro_ver;
+    
+    if (!(fin = fopen(path, "rb"))) goto _ERR;
+    fileSize = getFileSize(fin);
+    
+    fread((void*)&dro_magic, 8, 1, fin);
+    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto _ERR;
+    fread((void*)&dro_ver, 4, 1, fin);
+    
+    switch (dro_ver) {
+        case 0x00000001:
+        case 0x00010000:
+            goto _ERR;
+        case 0x00000002: {
+            DWORD dro_lengthPairs;
+            DWORD dro_lengthMS;
+            BYTE  dro_hardwareType;
+            BYTE  dro_format;
+            BYTE  dro_compression;
+            BYTE  dro_shortDelayCode;
+            BYTE  dro_longDelayCode;
+            BYTE  dro_codemapLength;
+            BYTE  dro_codemap[128];
+            
+            fread((void*)&dro_lengthPairs, 4, 1, fin);
+            fread((void*)&dro_lengthMS, 4, 1, fin);
+            fread((void*)&dro_hardwareType, 1, 1, fin);
+            fread((void*)&dro_format, 1, 1, fin);
+            fread((void*)&dro_compression, 1, 1, fin);
+            fread((void*)&dro_shortDelayCode, 1, 1, fin);
+            fread((void*)&dro_longDelayCode, 1, 1, fin);
+            fread((void*)&dro_codemapLength, 1, 1, fin);
+            fread((void*)dro_codemap, 1, dro_codemapLength, fin);
+            
+            if (ferror(fin)) goto _ERR;
+            if (dro_format != 0) goto _ERR;
+            
+            crudeEstimate = dro_lengthPairs;
+            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            
+            for (int i=0; i < dro_lengthPairs; i++) {
+                BYTE reg, val;
+                
+                fread((void*)&reg, 1, 1, fin);
+                fread((void*)&val, 1, 1, fin);
+                
+                if (ferror(fin)) break;
+                if        (reg == dro_shortDelayCode) {
+                    delayNum +=  val+1;
+                } else if (reg == dro_longDelayCode) {
+                    delayNum += (val+1)<<8;
+                } else { //normal register
+                    int isHigh = reg&0x80;
+                    if (index > 0) {
+                        song->rows[index-1].duration = (float)delayNum / 1000;
+                    }
+                    delayNum = 0;
+                    
+                    //one extra for two SongRows
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    
+                    song->rows[index].port = (isHigh ? 2 : 0);
+                    song->rows[index].data = dro_codemap[reg&0x7F];
+                    song->rows[index++].duration = 0.0;
+                    song->rows[index].port = (isHigh ? 3 : 1);
+                    song->rows[index].data = val;
+                    song->rows[index++].duration = 0.0;
+                    song->dataSize = index;
+                }
+            }
+            
+            }
+            break;
+        default:
+            goto _ERR;
+    }
+    
+    song->type = SNG_OPLX;
+    fclose(fin);
+    
+    return TRUE;
+    _ERR:
+        if (fin) fclose(fin);
+        return FALSE;
+}
+
 BOOL loadRdosRawOpl(Song* song, char* path) {
     FILE* fin;
     int fileSize;
-    int index = 0;
     int crudeEstimate;
+    int index = 0;
+    int delayNum = 0;
     BYTE raw_magic[8];
-    int raw_delayNum = 0;
     BOOL raw_isChipHigh = FALSE;
     USHORT raw_clock;
     
@@ -100,19 +194,21 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     while(!feof(fin)) {
         BYTE val, reg;
         
+        if (!raw_clock) raw_clock = 0xFFFF;
         fread((void*)&val, 1, 1, fin);
         fread((void*)&reg, 1, 1, fin);
         
         if (val == 0xFF && reg == 0xFF) break; //EOF
+        if (ferror(fin)) break;
+        
         switch(reg) {
             case 0x00: //delay
-                raw_delayNum += val;
+                delayNum += val;
                 break;
             case 0x02: //control
                 switch (val) {
                     case 0x00: //clock change
                         fread((void*)&raw_clock, 2, 1, fin);
-                        
                         break;
                     case 0x01: //write low
                         raw_isChipHigh = FALSE;
@@ -124,10 +220,11 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 break;
             default: //normal register
                 if (index > 0) {
-                    song->rows[index-1].duration = (float)(raw_delayNum * raw_clock) / 1193180.0;
+                    song->rows[index-1].duration = (float)(delayNum * raw_clock) / 1193180.0;
                 }
-                raw_delayNum = 0;
+                delayNum = 0;
                 
+                //one extra for two SongRows
                 if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
                 
                 song->rows[index].port = (raw_isChipHigh ? 2 : 0);
@@ -139,7 +236,6 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 song->dataSize = index;
                 break;
         }
-        if (!raw_clock) raw_clock = 0xFFFF;
     }
     song->type = SNG_OPLX;
     fclose(fin);
@@ -152,7 +248,7 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
 
 BOOL loadDbgViewLog(Song* song, char* path) {
     #define LINEMAX 1024
-    #define DELSENS 0.0001
+    #define DELSENS 0.001 //one millisecond
     FILE* fin;
     int fileSize;
     int index = 0;

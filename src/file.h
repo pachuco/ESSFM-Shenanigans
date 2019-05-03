@@ -20,6 +20,12 @@ void closeMemFile(MemFile* mf);
 
 //-------------------------------------
 
+#define F_ANY "Any file\0*.*\0"
+#define F_LOG "DbgView log\0*.LOG\0"
+#define F_RAW "RDOS raw opl\0*.RAW\0"
+#define F_DRO "DosBox DRO\0*.DRO\0"
+#define FILETYPES F_ANY F_LOG F_RAW F_DRO
+
 typedef enum {
     SNG_OPLX, SNG_ESS
 } SONG_TYPE;
@@ -43,6 +49,7 @@ typedef struct Song {
     int allocSize;
 } Song;
 
+BOOL loadDosboxDro(Song* song, char* path);
 BOOL loadRdosRawOpl(Song* song, char* path);
 BOOL loadDbgViewLog(Song* song, char* path);
 

@@ -39,10 +39,12 @@ BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
     exPartFromPath(ext, inPath, 8, EXPTH_EXTENSION);
     strupr(ext);
     if        (!strcmp(ext, "LOG")) {
-        if (!loadDbgViewLog(outSong, inPath)) success = FALSE;
+        success = loadDbgViewLog(outSong, inPath);
         //if (success) TEST_ESS_doesPort3WriteOnly012(outSong);
     } else if (!strcmp(ext, "RAW")) {
-        if (!loadRdosRawOpl(outSong, inPath)) success = FALSE;
+        success = loadRdosRawOpl(outSong, inPath);
+    } else if (!strcmp(ext, "DRO")) {
+        success = loadDosboxDro(outSong, inPath);
     } else {
         success = FALSE;
     }
@@ -196,14 +198,11 @@ int main(int argc, char *argv[]) {
                 
                 if (action & ACT_LOAD) {
                     OPENFILENAMEA ofna;
-                    #define F_LOG "DbgView log\0*.LOG\0"
-                    #define F_RAW "RDOS raw opl\0*.RAW\0"
-                    #define F_ANY "Any file\0*.*\0"
                     
                     ofna.lStructSize        = sizeof(OPENFILENAMEA);
                     ofna.hwndOwner          = GetConsoleWindow();
                     ofna.hInstance          = NULL;
-                    ofna.lpstrFilter        = F_ANY F_LOG F_RAW "\0";
+                    ofna.lpstrFilter        = FILETYPES "\0";
                     ofna.lpstrCustomFilter  = NULL;
                     ofna.nMaxCustFilter     = 0;
                     ofna.nFilterIndex       = 1;
@@ -231,9 +230,6 @@ int main(int argc, char *argv[]) {
                         FM_stopSynth();
                         FM_startSynth();
                     }
-                    #undef F_LOG
-                    #undef F_RAW
-                    #undef F_ANY
                 }
                 
                 if (pSong) {
