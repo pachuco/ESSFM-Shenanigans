@@ -106,6 +106,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
             fread((void*)&dro_lengthBytes, 4, 1, fin);
             fread((void*)&dro_hardwareType, 4, 1, fin);
             
+            //hardwareType may be UINT8 or maybe UINT32
             if (dro_hardwareType & 0xFFFFFF00) fseek(fin, -3, SEEK_CUR);
             dro_hardwareType &= 0xFF;
             
@@ -147,7 +148,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
                         doWrite = TRUE;
                         reg = code;
                         fread((void*)&val, 1, 1, fin);
-                        i += 2;
+                        i += 1;
                         break;
                 }
                 if (ferror(fin)) break;
