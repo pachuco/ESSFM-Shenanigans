@@ -97,7 +97,7 @@ void clearScreen() {
    SetConsoleCursorPosition(hOut, coordScreen);
 }
 
-COORD paintAttributeRect(ScreenBuffer* sBuf, SMALL_RECT rect, WORD attributes) {;
+COORD paintAttributeRect(ScreenBuffer* sBuf, SMALL_RECT rect, WORD attributes) {
     if (!trimWriteRegion(sBuf, &rect)) return (COORD){-1, -1};
     
     for (int i=rect.Top; i < rect.Bottom; i++) {

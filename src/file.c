@@ -84,6 +84,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
     int crudeEstimate;
     int index = 0;
     int delayNum = 0;
+    BOOL isChipHigh = FALSE;
     BYTE dro_magic[8];
     DWORD dro_ver;
     
@@ -96,8 +97,81 @@ BOOL loadDosboxDro(Song* song, char* path) {
     
     switch (dro_ver) {
         case 0x00000001:
-        case 0x00010000:
-            goto _ERR;
+        case 0x00010000: {
+            DWORD dro_lengthMS;
+            DWORD dro_lengthBytes;
+            DWORD dro_hardwareType;
+            
+            fread((void*)&dro_lengthMS, 4, 1, fin);
+            fread((void*)&dro_lengthBytes, 4, 1, fin);
+            fread((void*)&dro_hardwareType, 4, 1, fin);
+            
+            if (dro_hardwareType & 0xFFFFFF00) fseek(fin, -3, SEEK_CUR);
+            dro_hardwareType &= 0xFF;
+            
+            crudeEstimate = (fileSize - ftell(fin)) / 2;
+            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            
+            for (int i=0; i < dro_lengthBytes; i++) {
+                BYTE reg, val;
+                BYTE delShort; USHORT delLong;
+                BOOL doWrite = FALSE;
+                BYTE code;
+                
+                fread((void*)&code, 1, 1, fin);
+                
+                switch(code) {
+                    case 0x00:  //delay short
+                        fread((void*)&delShort, 1, 1, fin);
+                        delayNum += delShort+1;
+                        i += 1;
+                        break;
+                    case 0x01:  //delay long
+                        fread((void*)&delLong, 2, 1, fin);
+                        delayNum += delLong+1;
+                        i += 2;
+                        break;
+                    case 0x02:  //switch low
+                        isChipHigh = FALSE;
+                        break;
+                    case 0x03:  //switch high
+                        isChipHigh = TRUE;
+                        break;
+                    case 0x04:  //escape
+                        doWrite = TRUE;
+                        fread((void*)&reg, 1, 1, fin);
+                        fread((void*)&val, 1, 1, fin);
+                        i += 2;
+                        break;
+                    default:    //normal register
+                        doWrite = TRUE;
+                        reg = code;
+                        fread((void*)&val, 1, 1, fin);
+                        i += 2;
+                        break;
+                }
+                if (ferror(fin)) break;
+                
+                if (doWrite) {
+                    if (index > 0) {
+                        song->rows[index-1].duration = (float)delayNum / 1000;
+                    }
+                    delayNum = 0;
+                    
+                    //one extra for two SongRows
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    
+                    song->rows[index].port = (isChipHigh ? 2 : 0);
+                    song->rows[index].data = reg;
+                    song->rows[index++].duration = 0.0;
+                    song->rows[index].port = (isChipHigh ? 3 : 1);
+                    song->rows[index].data = val;
+                    song->rows[index++].duration = 0.0;
+                    song->dataSize = index;
+                }
+            }
+            break;
+        }
         case 0x00000002: {
             DWORD dro_lengthPairs;
             DWORD dro_lengthMS;
@@ -121,6 +195,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
             
             if (ferror(fin)) goto _ERR;
             if (dro_format != 0) goto _ERR;
+            if (dro_compression != 0) goto _ERR;
             
             crudeEstimate = dro_lengthPairs;
             if (!songAlloc(song, crudeEstimate)) goto _ERR;
@@ -147,7 +222,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
                     if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
                     
                     song->rows[index].port = (isHigh ? 2 : 0);
-                    song->rows[index].data = dro_codemap[reg&0x7F];
+                    song->rows[index].data = dro_codemap[reg & 0x7F];
                     song->rows[index++].duration = 0.0;
                     song->rows[index].port = (isHigh ? 3 : 1);
                     song->rows[index].data = val;
@@ -155,9 +230,8 @@ BOOL loadDosboxDro(Song* song, char* path) {
                     song->dataSize = index;
                 }
             }
-            
-            }
             break;
+        }
         default:
             goto _ERR;
     }
@@ -178,7 +252,7 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     int index = 0;
     int delayNum = 0;
     BYTE raw_magic[8];
-    BOOL raw_isChipHigh = FALSE;
+    BOOL isChipHigh = FALSE;
     USHORT raw_clock;
     
     if (!(fin = fopen(path, "rb"))) goto _ERR;
@@ -211,10 +285,10 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                         fread((void*)&raw_clock, 2, 1, fin);
                         break;
                     case 0x01: //write low
-                        raw_isChipHigh = FALSE;
+                        isChipHigh = FALSE;
                         break;
                     case 0x02: //write high
-                        raw_isChipHigh = TRUE;
+                        isChipHigh = TRUE;
                         break;
                 }
                 break;
@@ -227,10 +301,10 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 //one extra for two SongRows
                 if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
                 
-                song->rows[index].port = (raw_isChipHigh ? 2 : 0);
+                song->rows[index].port = (isChipHigh ? 2 : 0);
                 song->rows[index].data = reg;
                 song->rows[index++].duration = 0.0;
-                song->rows[index].port = (raw_isChipHigh ? 3 : 1);
+                song->rows[index].port = (isChipHigh ? 3 : 1);
                 song->rows[index].data = val;
                 song->rows[index++].duration = 0.0;
                 song->dataSize = index;
