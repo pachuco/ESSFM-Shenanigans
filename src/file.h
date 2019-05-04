@@ -49,6 +49,7 @@ typedef struct Song {
     int allocSize;
 } Song;
 
+BOOL loadWeirdDosboxDro(Song* song, char* path);
 BOOL loadDosboxDro(Song* song, char* path);
 BOOL loadRdosRawOpl(Song* song, char* path);
 BOOL loadDbgViewLog(Song* song, char* path);

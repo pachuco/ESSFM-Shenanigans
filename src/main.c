@@ -45,6 +45,7 @@ BOOL loadSong(PCHAR inPath, PCHAR outFileName, Song* outSong) {
         success = loadRdosRawOpl(outSong, inPath);
     } else if (!strcmp(ext, "DRO")) {
         success = loadDosboxDro(outSong, inPath);
+        if (!success) success = loadWeirdDosboxDro(outSong, inPath);
     } else {
         success = FALSE;
     }

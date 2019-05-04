@@ -78,6 +78,123 @@ static BOOL songReallocIfNeeded(Song* song, int index, int amount) {
     return TRUE;
 }
 
+//This format seems to hang around the old "droed" utility, circa 2004
+//It has v2 Major version, v1 commands, and registers separated from data in file halves
+BOOL loadWeirdDosboxDro(Song* song, char* path) {
+    FILE* fin;
+    int fileSize;
+    int crudeEstimate;
+    int index = 0;
+    int delayNum = 0;
+    BOOL isChipHigh = FALSE;
+    BYTE dro_magic[8];
+    DWORD dro_ver;
+    
+    if (!(fin = fopen(path, "rb"))) goto _ERR;
+    fileSize = getFileSize(fin);
+    
+    fread((void*)&dro_magic, 8, 1, fin);
+    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto _ERR;
+    fread((void*)&dro_ver, 4, 1, fin);
+    
+    switch (dro_ver) {
+        case 0x00000002: {
+            int i;
+            DWORD dro_lengthMS;
+            DWORD dro_lengthBytes;
+            DWORD dro_unknown00;
+            BYTE  dro_hardwareType;
+            
+            fread((void*)&dro_lengthMS, 4, 1, fin);
+            fread((void*)&dro_lengthBytes, 4, 1, fin);
+            fread((void*)&dro_unknown00, 4, 1, fin); //what is even this?
+            fread((void*)&dro_hardwareType, 1, 1, fin);
+            
+            crudeEstimate = dro_lengthBytes * 2;
+            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            
+            //registry half
+            for (int i=0; i < dro_lengthBytes; i++) {
+                BYTE reg, val;
+                BYTE delShort; USHORT delLong;
+                BOOL doWrite = FALSE;
+                BYTE code;
+                
+                fread((void*)&code, 1, 1, fin);
+                
+                switch(code) {
+                    case 0x00:  //delay short
+                        fread((void*)&delShort, 1, 1, fin);
+                        delayNum += delShort+1;
+                        i += 1;
+                        break;
+                    case 0x01:  //delay long
+                        fread((void*)&delLong, 2, 1, fin);
+                        delayNum += delLong+1;
+                        i += 2;
+                        break;
+                    case 0x02:  //switch low
+                        isChipHigh = FALSE;
+                        break;
+                    case 0x03:  //switch high
+                        isChipHigh = TRUE;
+                        break;
+                    case 0x04:  //escape
+                        doWrite = TRUE;
+                        fread((void*)&reg, 1, 1, fin);
+                        i += 1;
+                        break;
+                    default:
+                        doWrite = TRUE;
+                        reg = code;
+                        break;
+                }
+                if (ferror(fin)) break;
+                
+                if (doWrite) {
+                    if (index > 0) {
+                        song->rows[index-1].duration = (float)delayNum / 1000;
+                    }
+                    delayNum = 0;
+                    
+                    //one extra for two SongRows
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    
+                    song->rows[index].port = (isChipHigh ? 2 : 0);
+                    song->rows[index].data = reg;
+                    song->rows[index++].duration = 0.0;
+                    song->rows[index].port = (isChipHigh ? 3 : 1);
+                    song->rows[index].data = 0x00;
+                    song->rows[index++].duration = 0.0;
+                    song->dataSize = index;
+                }
+            }
+            
+            //data half
+            for (int i=0; i < dro_lengthBytes; i++) {
+                BYTE val;
+                
+                fread((void*)&val, 1, 1, fin);
+                
+                if (ferror(fin)) break;
+                //song->rows[i*2 + 0];
+                song->rows[i*2 + 1].data = val;
+            }
+            break;
+        }
+        default:
+            goto _ERR;
+    }
+    
+    song->type = SNG_OPLX;
+    fclose(fin);
+    
+    return TRUE;
+    _ERR:
+        if (fin) fclose(fin);
+        return FALSE;
+}
+
 BOOL loadDosboxDro(Song* song, char* path) {
     FILE* fin;
     int fileSize;
@@ -110,7 +227,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
             if (dro_hardwareType & 0xFFFFFF00) fseek(fin, -3, SEEK_CUR);
             dro_hardwareType &= 0xFF;
             
-            crudeEstimate = (fileSize - ftell(fin)) / 2;
+            crudeEstimate = dro_lengthBytes * 2;
             if (!songAlloc(song, crudeEstimate)) goto _ERR;
             
             for (int i=0; i < dro_lengthBytes; i++) {
