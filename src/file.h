@@ -1,7 +1,7 @@
-#ifndef ESS_FILE_H
-#define ESS_FILE_H
+#pragma once
 
 #include <windows.h>
+#include <stdio.h>
 
 typedef enum {EXPTH_FNAME, EXPTH_EXTENSION} EXPTH_T;
 
@@ -49,10 +49,11 @@ typedef struct Song {
     int allocSize;
 } Song;
 
-BOOL loadWeirdDosboxDro(Song* song, char* path);
-BOOL loadDosboxDro(Song* song, char* path);
-BOOL loadRdosRawOpl(Song* song, char* path);
-BOOL loadDbgViewLog(Song* song, char* path);
+Song* loadSong(char* path);
+Song* loadWeirdDosboxDro(char* path);
+Song* loadDosboxDro(char* path);
+Song* loadRdosRawOpl(char* path);
+Song* loadDbgViewLog(char* path);
 
 //-------------------------------------
 
@@ -61,5 +62,3 @@ typedef struct Config {
 } Config;
 
 BOOL loadConfig(char* path, Config* conf);
-
-#endif

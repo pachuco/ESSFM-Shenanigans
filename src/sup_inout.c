@@ -12,23 +12,25 @@ HINSTANCE hInOut;
 BOOL initInOut() {
     #define CHK(x) if(!(x)) return FALSE
     #define GPA(x) (x = (void*)GetProcAddress(hInOut, #x))
-    CHK(hInOut = LoadLibrary(INPOUT_LIB));
-    //orig
-    CHK(GPA(Out32));
-    CHK(GPA(Inp32));
-    //DLLPortIO
-    CHK(GPA(DlPortReadPortUchar));
-    CHK(GPA(DlPortWritePortUchar));
-    CHK(GPA(DlPortReadPortUshort));
-    CHK(GPA(DlPortWritePortUshort));
-    CHK(GPA(DlPortReadPortUlong));
-    CHK(GPA(DlPortWritePortUlong));
-    //helper
-    CHK(GPA(IsInpOutDriverOpen));
-    CHK(GPA(IsXP64Bit));
-    
-    
-    CHK(IsInpOutDriverOpen());
+    #ifdef ENABLE_HARDWARE_ACCESS
+        CHK(hInOut = LoadLibrary(INPOUT_LIB));
+        //orig
+        CHK(GPA(Out32));
+        CHK(GPA(Inp32));
+        //DLLPortIO
+        CHK(GPA(DlPortReadPortUchar));
+        CHK(GPA(DlPortWritePortUchar));
+        CHK(GPA(DlPortReadPortUshort));
+        CHK(GPA(DlPortWritePortUshort));
+        CHK(GPA(DlPortReadPortUlong));
+        CHK(GPA(DlPortWritePortUlong));
+        //helper
+        CHK(GPA(IsInpOutDriverOpen));
+        CHK(GPA(IsXP64Bit));
+        
+        
+        CHK(IsInpOutDriverOpen());
+    #endif
     
     return TRUE;
     #undef GPA

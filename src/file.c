@@ -78,9 +78,35 @@ static BOOL songReallocIfNeeded(Song* song, int index, int amount) {
     return TRUE;
 }
 
+void destroySong(Song* song) {
+    if (song) {
+        if (song->rows) free(song->rows);
+        free(song);
+    }
+}
+
+Song* loadSong(char* path) {
+    char ext[8];
+    Song* song = NULL;
+    
+    exPartFromPath(ext, path, 8, EXPTH_EXTENSION);
+    strupr(ext);
+    if        (!strcmp(ext, "LOG")) {
+        song = loadDbgViewLog(path);
+        //if (song) TEST_ESS_doesPort3WriteOnly012(song);
+    } else if (!strcmp(ext, "RAW")) {
+        song = loadRdosRawOpl(path);
+    } else if (!strcmp(ext, "DRO")) {
+        song = loadDosboxDro(path);
+        if (!song) song = loadWeirdDosboxDro(path);
+    }
+    
+    return song;
+}
+
 //This format seems to hang around the old "droed" utility, circa 2004
 //It has v2 Major version, v1 commands, and registers separated from data in file halves
-BOOL loadWeirdDosboxDro(Song* song, char* path) {
+Song* loadWeirdDosboxDro(char* path) {
     FILE* fin;
     int fileSize;
     int crudeEstimate;
@@ -89,12 +115,14 @@ BOOL loadWeirdDosboxDro(Song* song, char* path) {
     BOOL isChipHigh = FALSE;
     BYTE dro_magic[8];
     DWORD dro_ver;
+    Song* song;
     
-    if (!(fin = fopen(path, "rb"))) goto _ERR;
+    if (!(song = calloc(1, sizeof(Song)))) goto ERR;
+    if (!(fin = fopen(path, "rb"))) goto ERR;
     fileSize = getFileSize(fin);
     
     fread((void*)&dro_magic, 8, 1, fin);
-    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto _ERR;
+    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto ERR;
     fread((void*)&dro_ver, 4, 1, fin);
     
     switch (dro_ver) {
@@ -111,7 +139,7 @@ BOOL loadWeirdDosboxDro(Song* song, char* path) {
             fread((void*)&dro_hardwareType, 1, 1, fin);
             
             crudeEstimate = dro_lengthBytes * 2;
-            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            if (!songAlloc(song, crudeEstimate)) goto ERR;
             
             //registry half
             for (int i=0; i < dro_lengthBytes; i++) {
@@ -158,7 +186,7 @@ BOOL loadWeirdDosboxDro(Song* song, char* path) {
                     delayNum = 0;
                     
                     //one extra for two SongRows
-                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto ERR;
                     
                     song->rows[index].port = (isChipHigh ? 2 : 0);
                     song->rows[index].data = reg;
@@ -183,19 +211,20 @@ BOOL loadWeirdDosboxDro(Song* song, char* path) {
             break;
         }
         default:
-            goto _ERR;
+            goto ERR;
     }
     
     song->type = SNG_OPLX;
     fclose(fin);
     
-    return TRUE;
-    _ERR:
+    return song;
+    ERR:
         if (fin) fclose(fin);
-        return FALSE;
+        destroySong(song);
+        return NULL;
 }
 
-BOOL loadDosboxDro(Song* song, char* path) {
+Song* loadDosboxDro(char* path) {
     FILE* fin;
     int fileSize;
     int crudeEstimate;
@@ -204,12 +233,14 @@ BOOL loadDosboxDro(Song* song, char* path) {
     BOOL isChipHigh = FALSE;
     BYTE dro_magic[8];
     DWORD dro_ver;
+    Song* song;
     
-    if (!(fin = fopen(path, "rb"))) goto _ERR;
+    if (!(song = calloc(1, sizeof(Song)))) goto ERR;
+    if (!(fin = fopen(path, "rb"))) goto ERR;
     fileSize = getFileSize(fin);
     
     fread((void*)&dro_magic, 8, 1, fin);
-    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto _ERR;
+    if (memcmp(dro_magic, "DBRAWOPL", 8)) goto ERR;
     fread((void*)&dro_ver, 4, 1, fin);
     
     switch (dro_ver) {
@@ -228,7 +259,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
             dro_hardwareType &= 0xFF;
             
             crudeEstimate = dro_lengthBytes * 2;
-            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            if (!songAlloc(song, crudeEstimate)) goto ERR;
             
             for (int i=0; i < dro_lengthBytes; i++) {
                 BYTE reg, val;
@@ -277,7 +308,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
                     delayNum = 0;
                     
                     //one extra for two SongRows
-                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto ERR;
                     
                     song->rows[index].port = (isChipHigh ? 2 : 0);
                     song->rows[index].data = reg;
@@ -311,12 +342,12 @@ BOOL loadDosboxDro(Song* song, char* path) {
             fread((void*)&dro_codemapLength, 1, 1, fin);
             fread((void*)dro_codemap, 1, dro_codemapLength, fin);
             
-            if (ferror(fin)) goto _ERR;
-            if (dro_format != 0) goto _ERR;
-            if (dro_compression != 0) goto _ERR;
+            if (ferror(fin)) goto ERR;
+            if (dro_format != 0) goto ERR;
+            if (dro_compression != 0) goto ERR;
             
             crudeEstimate = dro_lengthPairs;
-            if (!songAlloc(song, crudeEstimate)) goto _ERR;
+            if (!songAlloc(song, crudeEstimate)) goto ERR;
             
             for (int i=0; i < dro_lengthPairs; i++) {
                 BYTE reg, val;
@@ -337,7 +368,7 @@ BOOL loadDosboxDro(Song* song, char* path) {
                     delayNum = 0;
                     
                     //one extra for two SongRows
-                    if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                    if (!songReallocIfNeeded(song, index + 1, 64)) goto ERR;
                     
                     song->rows[index].port = (isHigh ? 2 : 0);
                     song->rows[index].data = dro_codemap[reg & 0x7F];
@@ -351,19 +382,20 @@ BOOL loadDosboxDro(Song* song, char* path) {
             break;
         }
         default:
-            goto _ERR;
+            goto ERR;
     }
     
     song->type = SNG_OPLX;
     fclose(fin);
     
-    return TRUE;
-    _ERR:
+    return song;
+    ERR:
         if (fin) fclose(fin);
-        return FALSE;
+        destroySong(song);
+        return NULL;
 }
 
-BOOL loadRdosRawOpl(Song* song, char* path) {
+Song* loadRdosRawOpl(char* path) {
     FILE* fin;
     int fileSize;
     int crudeEstimate;
@@ -372,16 +404,18 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     BYTE raw_magic[8];
     BOOL isChipHigh = FALSE;
     USHORT raw_clock;
+    Song* song;
     
-    if (!(fin = fopen(path, "rb"))) goto _ERR;
+    if (!(song = calloc(1, sizeof(Song)))) goto ERR;
+    if (!(fin = fopen(path, "rb"))) goto ERR;
     fileSize = getFileSize(fin);
     
     fread((void*)&raw_magic, 8, 1, fin);
-    if (memcmp(raw_magic, "RAWADATA", 8)) goto _ERR;
+    if (memcmp(raw_magic, "RAWADATA", 8)) goto ERR;
     fread((void*)&raw_clock, 2, 1, fin);
     
     crudeEstimate = (fileSize - ftell(fin));
-    if (!songAlloc(song, crudeEstimate)) goto _ERR;
+    if (!songAlloc(song, crudeEstimate)) goto ERR;
     
     while(!feof(fin)) {
         BYTE val, reg;
@@ -417,7 +451,7 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
                 delayNum = 0;
                 
                 //one extra for two SongRows
-                if (!songReallocIfNeeded(song, index + 1, 64)) goto _ERR;
+                if (!songReallocIfNeeded(song, index + 1, 64)) goto ERR;
                 
                 song->rows[index].port = (isChipHigh ? 2 : 0);
                 song->rows[index].data = reg;
@@ -432,13 +466,14 @@ BOOL loadRdosRawOpl(Song* song, char* path) {
     song->type = SNG_OPLX;
     fclose(fin);
     
-    return TRUE;
-    _ERR:
+    return song;
+    ERR:
         if (fin) fclose(fin);
-        return FALSE;
+        destroySong(song);
+        return NULL;
 }
 
-BOOL loadDbgViewLog(Song* song, char* path) {
+Song* loadDbgViewLog(char* path) {
     #define LINEMAX 1024
     #define DELSENS 0.001 //one millisecond
     FILE* fin;
@@ -447,11 +482,13 @@ BOOL loadDbgViewLog(Song* song, char* path) {
     double delay = 0.0;
     char lineBuf[LINEMAX]; char split[]="\t ";
     int crudeEstimate; 
+    Song* song;
     
-    if (!(fin = fopen(path, "r"))) goto _ERR;
+    if (!(song = calloc(1, sizeof(Song)))) goto ERR;
+    if (!(fin = fopen(path, "r"))) goto ERR;
     fileSize = getFileSize(fin);
     crudeEstimate = fileSize/44; //44 is size of smallest log entry
-    if (!songAlloc(song, crudeEstimate)) goto _ERR;
+    if (!songAlloc(song, crudeEstimate)) goto ERR;
     
     while(fgets(lineBuf, LINEMAX, fin)) {
         int lineLen; char* pch;
@@ -508,7 +545,7 @@ BOOL loadDbgViewLog(Song* song, char* path) {
         if (!(pch = strtok(NULL, split))) continue;
         sRow.data = strtol(pch, NULL, 0);
         
-        if (!songReallocIfNeeded(song, index, 512)) goto _ERR;
+        if (!songReallocIfNeeded(song, index, 512)) goto ERR;
         
         song->rows[index].duration = sRow.duration; //read current timestamp
         song->rows[index].port     = sRow.port;
@@ -519,10 +556,11 @@ BOOL loadDbgViewLog(Song* song, char* path) {
     song->type = SNG_ESS;
     fclose(fin);
     
-    return TRUE;
-    _ERR:
+    return song;
+    ERR:
         if (fin) fclose(fin);
-        return FALSE;
+        destroySong(song);
+        return NULL;
     #undef LINEMAX
     #undef DELSENS
 }
