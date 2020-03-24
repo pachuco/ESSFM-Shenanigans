@@ -49,7 +49,7 @@ static DWORD WINAPI playThread(LPVOID lpParam) {
                 }
                 sRow = NULL;
             }
-            SwitchToThread();
+            if (curWait != 0.0) SwitchToThread();
         } else {
             curWait = lastTime = 0;
             sRow = NULL;
