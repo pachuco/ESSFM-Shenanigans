@@ -6,10 +6,10 @@
 
 #define FONT_DEFSIZE 14
 
-#define COL_INDEX "Index"
-#define COL_DURAT "Duration"
-#define COL_PORT  "Port"
-#define COL_DATA  "Data"
-#define COL_DESCR "Description"
+#define TXT_LVINDEX "Index"
+#define TXT_LVDURAT "Duration"
+#define TXT_LVPORT  "Port"
+#define TXT_LVDATA  "Data"
+#define TXT_LVDESCR "Description"
 
 #endif

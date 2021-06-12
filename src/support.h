@@ -26,6 +26,7 @@ BOOL	(__stdcall *GetPhysLong)(PBYTE pbPhysAddr, PDWORD pdwPhysVal);
 BOOL	(__stdcall *SetPhysLong)(PBYTE pbPhysAddr, DWORD dwPhysVal);
 
 BOOL initInOut();
+void shutdownInOut();
 void QPCuWait(DWORD uSecTime);
 
 //-------------------------------------console
